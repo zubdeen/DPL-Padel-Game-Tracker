@@ -9,6 +9,7 @@ import {
   Wallet,
   CircleHelp,
 } from "lucide-react";
+import type { NavigationLabels } from "@/lib/site-content";
 
 export type TabId =
   | "standings"
@@ -42,9 +43,10 @@ interface NavigationProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
   showAdmin?: boolean;
+  labels?: NavigationLabels;
 }
 
-export function Navigation({ activeTab, onTabChange, showAdmin }: NavigationProps) {
+export function Navigation({ activeTab, onTabChange, showAdmin, labels }: NavigationProps) {
   const items: NavItem[] = showAdmin
     ? [...navItems, { id: "admin" as TabId, icon: ShieldCheck, label: "Admin" }]
     : navItems;
@@ -54,11 +56,13 @@ export function Navigation({ activeTab, onTabChange, showAdmin }: NavigationProp
       <div className="flex items-center justify-center gap-0.5 py-1.5 px-2 overflow-x-auto scrollbar-hide">
         {items.map((item) => {
           const isActive = activeTab === item.id;
+          const labelKey = item.id === "?" ? "help" : item.id;
+          const itemLabel = labels?.[labelKey as keyof NavigationLabels] ?? item.label;
           return (
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
-              aria-label={item.label}
+              aria-label={itemLabel}
               className={`flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150 flex-shrink-0 ${
                 isActive
                   ? "bg-primary/90 text-primary-foreground"

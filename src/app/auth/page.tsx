@@ -20,6 +20,7 @@ export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmationPending, setConfirmationPending] = useState(false);
 
   useEffect(() => {
     if (user) router.push("/admin");
@@ -28,30 +29,63 @@ export default function AuthPage() {
   const signIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     setBusy(false);
-    if (error) toast.error(error.message);
-    else toast.success("Signed in");
+    if (error) {
+      toast.error(
+        /invalid login credentials/i.test(error.message)
+          ? "No account matches those details. Create a new account first if the previous users were deleted."
+          : error.message,
+      );
+    } else {
+      toast.success("Signed in");
+    }
+
   };
 
   const signUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { emailRedirectTo: `${window.location.origin}/admin` },
     });
     setBusy(false);
+    if (error) {
+      toast.error(error.message);
+    } else if (data.session) {
+      toast.success("Account created. Continue to claim the admin seat.");
+      router.push("/admin");
+    } else {
+      setConfirmationPending(true);
+      toast.success("Account created. Confirm the email we sent, then sign in and claim the admin seat.");
+    }
+
+  };
+
+    const resendConfirmation = async () => {
+    if (!email) {
+      toast.error("Enter the email address used for the new account first.");
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/admin` },
+    });
+    setBusy(false);
     if (error) toast.error(error.message);
-    else toast.success("Account created. You can sign in now.");
+    else toast.success("A new confirmation email has been requested.");
   };
 
   return (
     <div className="min-h-screen bg-background flex justify-center">
+
       <main className="w-full max-w-[420px] relative">
         <div className="px-5 pb-10 pt-8">
           <Link
@@ -71,15 +105,18 @@ export default function AuthPage() {
               Admin Access
             </h1>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Only the tournament admin can record matches
+                            Create a new account, then claim the single admin seat
+
             </p>
           </div>
 
           <SectionCard
-            title="Sign In"
+                        title="Administrator Account"
+
             icon={<ShieldCheck className="h-4 w-4 text-primary" />}
           >
-            <Tabs defaultValue="signin">
+                        <Tabs defaultValue="signup">
+
               <TabsList className="grid w-full grid-cols-2 mb-4 bg-white/[0.03] border border-white/[0.05]">
                 <TabsTrigger value="signin">Sign in</TabsTrigger>
                 <TabsTrigger value="signup">Sign up</TabsTrigger>
@@ -120,11 +157,20 @@ export default function AuthPage() {
                   <Button type="submit" className="w-full" disabled={busy}>
                     {busy ? "Creating…" : "Create account"}
                   </Button>
-                  <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    The first signed-in user can claim the single admin seat
-                    from the admin page. After that, claiming is permanently
-                    locked.
+                                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Previous accounts were removed. Create a new account here, confirm the email if prompted, then visit the admin page and select Claim admin seat. The first signed-in user becomes the only administrator.
                   </p>
+                  {confirmationPending ? (
+                    <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 space-y-2">
+                      <p className="text-[10px] leading-relaxed text-amber-100/85">
+                        No confirmation email? Try resending it once. If it still does not arrive, email confirmation needs to be disabled or configured in the Supabase dashboard before this account can sign in.
+                      </p>
+                      <Button type="button" variant="outline" className="w-full" onClick={resendConfirmation} disabled={busy}>
+                        {busy ? "Requesting…" : "Resend confirmation email"}
+                      </Button>
+                    </div>
+                  ) : null}
+
                 </form>
               </TabsContent>
             </Tabs>

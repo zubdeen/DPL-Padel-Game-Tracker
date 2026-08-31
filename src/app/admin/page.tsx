@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,16 @@ import { fetchEliminatorMatches } from "@/lib/eliminator-data";
 import { computeEliminatorStandings, type EliminatorMatch } from "@/lib/eliminators";
 import { teamLogos } from "@/lib/team-logos";
 import {
+  contentAsJson,
+  defaultSiteContent,
+  getTeamLogo,
+  parseSiteContent,
+  saveSiteContent,
+  useSiteContent,
+  type SiteContent,
+  type ScheduleEvent,
+} from "@/lib/site-content";
+import {
   fetchTeamRankings,
   TEAM_RANKING_STATUS_LABELS,
   type TeamRankingStatus,
@@ -44,8 +55,18 @@ import {
   Star,
   Trophy,
   ListOrdered,
+  ImagePlus,
+  LayoutDashboard,
+  RotateCcw,
+  Save,
+  Settings2,
+  CalendarDays,
+  Plus,
 } from "lucide-react";
 import type { Match, Player } from "@/lib/scoring";
+import { fetchPlayers } from "@/lib/player-data";
+import { fetchLockedSeason5Lineup, type LockedSeason5Lineup } from "@/lib/season5-data";
+import { Season5Panel } from "@/components/Season5Panel";
 
 const CATEGORY_ORDER: Record<string, number> = {
   M1: 1,
@@ -59,7 +80,7 @@ const QUERY_STALE_MS = 1000 * 60 * 5;
 export default function AdminPage() {
   const { user, isAdmin, loading } = useAuth();
   const router = useRouter();
-  const [adminPanel, setAdminPanel] = useState<"league" | "eliminators" | "rankings">("league");
+  const [adminPanel, setAdminPanel] = useState<"content" | "schedule" | "league" | "eliminators" | "rankings" | "season5">("content");
 
   useEffect(() => {
     if (!loading && !user) router.push("/auth");
@@ -94,13 +115,19 @@ export default function AdminPage() {
         <div className="space-y-4">
           <ViewAllPlayersCard />
           <AdminPanelSwitch value={adminPanel} onChange={setAdminPanel} />
-          {adminPanel === "league" ? (
+          {adminPanel === "content" ? (
+            <ContentManagerPanel />
+          ) : adminPanel === "schedule" ? (
+            <ScheduleManagerPanel />
+          ) : adminPanel === "league" ? (
             <>
               <MatchEntryPanel />
               <MatchListPanel />
             </>
           ) : adminPanel === "eliminators" ? (
             <EliminatorsPanel />
+          ) : adminPanel === "season5" ? (
+            <Season5Panel />
           ) : (
             <TeamRankingsPanel />
           )}
@@ -129,11 +156,33 @@ function AdminPanelSwitch({
   value,
   onChange,
 }: {
-  value: "league" | "eliminators" | "rankings";
-  onChange: (value: "league" | "eliminators" | "rankings") => void;
+  value: "content" | "schedule" | "league" | "eliminators" | "rankings" | "season5";
+  onChange: (value: "content" | "schedule" | "league" | "eliminators" | "rankings" | "season5") => void;
 }) {
   return (
-    <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.03] ring-1 ring-white/[0.06] p-1">
+    <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.03] ring-1 ring-white/[0.06] p-1">
+      <button
+        type="button"
+        onClick={() => onChange("content")}
+        className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wider transition ${
+          value === "content"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Content
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("schedule")}
+        className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wider transition ${
+          value === "schedule"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Schedule
+      </button>
       <button
         type="button"
         onClick={() => onChange("league")}
@@ -167,8 +216,347 @@ function AdminPanelSwitch({
       >
         Rankings
       </button>
+      <button
+        type="button"
+        onClick={() => onChange("season5")}
+        className={`rounded-lg px-2 py-2 text-[9px] font-semibold uppercase tracking-wider transition ${
+          value === "season5"
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Season 5
+      </button>
     </div>
   );
+}
+
+type SchedulePhaseKey = "leagueEvents" | "eliminatorEvents";
+
+function emptyScheduleEvent(phase: SchedulePhaseKey): ScheduleEvent {
+  return {
+    id: `${phase}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: phase === "leagueEvents" ? "League Match Night" : "Eliminator Round",
+    date: "",
+    time: "",
+    homeTeam: "",
+    awayTeam: "",
+    court: "",
+    notes: "",
+  };
+}
+
+function ScheduleManagerPanel() {
+  const queryClient = useQueryClient();
+  const players = usePlayers();
+  const { data: content, isLoading } = useSiteContent();
+  const [phase, setPhase] = useState<SchedulePhaseKey>("leagueEvents");
+  const [draft, setDraft] = useState<SiteContent>(defaultSiteContent);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (content) setDraft(content);
+  }, [content]);
+
+  const teams = useMemo(
+    () => Array.from(new Set((players.data ?? []).flatMap((player) => (player.team ? [player.team] : [])))).sort(),
+    [players.data],
+  );
+  const events = draft.schedule[phase];
+  const updateSchedule = (patch: Partial<SiteContent["schedule"]>) => {
+    setDraft((current) => ({ ...current, schedule: { ...current.schedule, ...patch } }));
+  };
+  const updateEvent = (id: string, patch: Partial<ScheduleEvent>) => {
+    updateSchedule({ [phase]: events.map((event) => (event.id === id ? { ...event, ...patch } : event)) });
+  };
+  const addEvent = () => updateSchedule({ [phase]: [...events, emptyScheduleEvent(phase)] });
+  const removeEvent = (id: string) => updateSchedule({ [phase]: events.filter((event) => event.id !== id) });
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await saveSiteContent(draft);
+    setSaving(false);
+    if (error) {
+      const migrationHint = /site_content|relation/i.test(error.message)
+        ? " Apply the site-content migration before publishing the schedule."
+        : "";
+      toast.error(`${error.message}${migrationHint}`);
+      return;
+    }
+    queryClient.setQueryData(["site_content"], draft);
+    toast.success("Schedule published");
+  };
+
+  return (
+    <SectionCard title="Manage Schedule" icon={<CalendarDays className="h-4 w-4 text-primary" />}>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-3">
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Nothing in the public schedule is permanent. Add, edit, reorder, or remove league and eliminator fixtures here; the dates, times, teams, courts, and notes publish to the schedule tab.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.03] p-1 ring-1 ring-white/[0.06]">
+          <button type="button" onClick={() => setPhase("leagueEvents")} className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wide transition ${phase === "leagueEvents" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>League</button>
+          <button type="button" onClick={() => setPhase("eliminatorEvents")} className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wide transition ${phase === "eliminatorEvents" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>Eliminators</button>
+        </div>
+
+        {isLoading ? <p className="py-4 text-center text-[11px] text-muted-foreground">Loading schedule…</p> : null}
+        <div className="space-y-3">
+          {events.map((event, index) => (
+            <div key={event.id} className="space-y-3 rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{phase === "leagueEvents" ? `League fixture ${index + 1}` : `Eliminator fixture ${index + 1}`}</p>
+                <button type="button" onClick={() => removeEvent(event.id)} className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-destructive/85 hover:text-destructive"><Trash2 className="h-3 w-3" /> Remove</button>
+              </div>
+              <ContentField label="Fixture title" value={event.title} onChange={(title) => updateEvent(event.id, { title })} hint="For example: Match Night 1, Qualifier, or Semi-final." />
+              <div className="grid grid-cols-2 gap-2">
+                <ScheduleInput label="Date" type="date" value={event.date} onChange={(date) => updateEvent(event.id, { date })} />
+                <ScheduleInput label="Time" type="time" value={event.time} onChange={(time) => updateEvent(event.id, { time })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <ScheduleTeamSelect label="Home team" value={event.homeTeam} teams={teams} onChange={(homeTeam) => updateEvent(event.id, { homeTeam })} />
+                <ScheduleTeamSelect label="Away team" value={event.awayTeam} teams={teams} onChange={(awayTeam) => updateEvent(event.id, { awayTeam })} />
+              </div>
+              <ScheduleInput label="Court / venue" value={event.court} onChange={(court) => updateEvent(event.id, { court })} placeholder="Court 1" />
+              <ContentField label="Notes" value={event.notes} onChange={(notes) => updateEvent(event.id, { notes })} multiline />
+            </div>
+          ))}
+          {events.length === 0 ? <p className="rounded-xl border border-dashed border-white/[0.12] px-3 py-7 text-center text-[10px] leading-relaxed text-muted-foreground">No fixtures have been published for this phase yet. Add the first one when the dates are confirmed.</p> : null}
+        </div>
+
+        <Button type="button" variant="secondary" className="w-full gap-1.5" onClick={addEvent}><Plus className="h-4 w-4" /> Add {phase === "leagueEvents" ? "league" : "eliminator"} fixture</Button>
+        <Button type="button" className="w-full gap-2" onClick={save} disabled={saving}><Save className="h-4 w-4" /> {saving ? "Publishing…" : "Publish schedule"}</Button>
+      </div>
+    </SectionCard>
+  );
+}
+
+function ScheduleInput({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; type?: "text" | "date" | "time"; placeholder?: string }) {
+  return <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label><Input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 bg-background/40 text-[11px]" /></div>;
+}
+
+function ScheduleTeamSelect({ label, value, teams, onChange }: { label: string; value: string; teams: string[]; onChange: (value: string) => void }) {
+  return <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label><Select value={value || "tbc"} onValueChange={(next) => onChange(next === "tbc" ? "" : next)}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tbc">TBC</SelectItem>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select></div>;
+}
+
+type ContentEditorTab = "brand" | "sections" | "images" | "advanced";
+
+function ContentManagerPanel() {
+  const queryClient = useQueryClient();
+  const players = usePlayers();
+  const { data: content, isLoading, error } = useSiteContent();
+  const [tab, setTab] = useState<ContentEditorTab>("brand");
+  const [draft, setDraft] = useState<SiteContent>(defaultSiteContent);
+  const [rawContent, setRawContent] = useState(contentAsJson(defaultSiteContent));
+  const [saving, setSaving] = useState(false);
+  const [uploadingTeam, setUploadingTeam] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!content) return;
+    setDraft(content);
+    setRawContent(contentAsJson(content));
+  }, [content]);
+
+  const update = <K extends keyof SiteContent>(section: K, patch: Partial<SiteContent[K]>) => {
+    setDraft((current) => ({
+      ...current,
+      [section]: { ...(current[section] as object), ...patch },
+    }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const { error: saveError } = await saveSiteContent(draft);
+    setSaving(false);
+    if (saveError) {
+      const migrationHint = /site_content|relation/i.test(saveError.message)
+        ? " The site-content migration still needs to be applied."
+        : "";
+      toast.error(`${saveError.message}${migrationHint}`);
+      return;
+    }
+    queryClient.setQueryData(["site_content"], draft);
+    setRawContent(contentAsJson(draft));
+    toast.success("Frontend content published");
+  };
+
+  const applyJson = () => {
+    try {
+      const parsed = parseSiteContent(rawContent);
+      setDraft(parsed);
+      setRawContent(contentAsJson(parsed));
+      toast.success("JSON applied to the editor");
+    } catch {
+      toast.error("That JSON is not valid. Fix the formatting and try again.");
+    }
+  };
+
+  const restoreDefaults = () => {
+    setDraft(defaultSiteContent);
+    setRawContent(contentAsJson(defaultSiteContent));
+    toast.success("Default new-season copy restored in the editor");
+  };
+
+  const uploadTeamLogo = async (team: string, file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Images must be 5 MB or smaller.");
+      return;
+    }
+    setUploadingTeam(team);
+    const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+    const safeTeam = team.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const path = `teams/${safeTeam}-${Date.now()}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("dpl-media").upload(path, file, { upsert: true, contentType: file.type });
+    setUploadingTeam(null);
+    if (uploadError) {
+      toast.error(`${uploadError.message} Apply the admin-content-media migration if the bucket is missing.`);
+      return;
+    }
+    const { data } = supabase.storage.from("dpl-media").getPublicUrl(path);
+    update("teamLogos", { [team]: data.publicUrl });
+    toast.success("Team logo uploaded. Publish frontend changes to use it.");
+  };
+
+  const teamNames = Array.from(
+    new Set([
+      ...Object.keys(draft.teamLogos),
+      ...(players.data ?? []).flatMap((player) => (player.team ? [player.team] : [])),
+    ]),
+  ).sort();
+
+  return (
+    <SectionCard title="Frontend Content Studio" icon={<LayoutDashboard className="h-4 w-4 text-primary" />}>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-3">
+          <div className="flex items-start gap-2">
+            <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              Update the season-facing copy and image URLs here. Save once to publish the changes across the public tracker. The advanced editor is available for a complete export or bulk update.
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? <p className="text-center text-[11px] text-muted-foreground">Loading frontend content…</p> : null}
+        {error ? <p className="text-[10px] leading-relaxed text-amber-300">Using local defaults while content settings are unavailable.</p> : null}
+
+        <div className="grid grid-cols-4 gap-1 rounded-xl bg-white/[0.03] p-1 ring-1 ring-white/[0.06]">
+          <ContentTabButton active={tab === "brand"} onClick={() => setTab("brand")} label="Brand" />
+          <ContentTabButton active={tab === "sections"} onClick={() => setTab("sections")} label="Copy" />
+          <ContentTabButton active={tab === "images"} onClick={() => setTab("images")} label="Images" />
+          <ContentTabButton active={tab === "advanced"} onClick={() => setTab("advanced")} label="JSON" />
+        </div>
+
+        {tab === "brand" ? (
+          <div className="space-y-3">
+            <ContentField label="League name" value={draft.brand.name} onChange={(value) => update("brand", { name: value })} />
+            <ContentField label="Highlighted name word" value={draft.brand.accentWord} onChange={(value) => update("brand", { accentWord: value })} hint="This word receives the season accent colour." />
+            <div className="grid grid-cols-2 gap-2">
+              <ContentField label="Season label" value={draft.brand.seasonLabel} onChange={(value) => update("brand", { seasonLabel: value })} />
+              <ContentField label="Status badge" value={draft.brand.statusLabel} onChange={(value) => update("brand", { statusLabel: value })} />
+            </div>
+            <ContentField label="Season tagline" value={draft.brand.tagline} onChange={(value) => update("brand", { tagline: value })} multiline />
+            <ContentField label="Location" value={draft.brand.location} onChange={(value) => update("brand", { location: value })} />
+            <ContentField label="League logo URL" value={draft.brand.logoUrl} onChange={(value) => update("brand", { logoUrl: value })} type="url" hint="Paste a public HTTPS image URL." />
+            <ContentField label="Hero image URL" value={draft.brand.heroImageUrl} onChange={(value) => update("brand", { heroImageUrl: value })} type="url" hint="Optional. A landscape image is best; leave blank for the new gradient treatment." />
+            <ContentField label="Hero image alt text" value={draft.brand.heroImageAlt} onChange={(value) => update("brand", { heroImageAlt: value })} />
+          </div>
+        ) : null}
+
+        {tab === "sections" ? (
+          <div className="space-y-5">
+            <ContentGroup title="Standings">
+              <ContentField label="Standings card title" value={draft.home.standingsTitle} onChange={(value) => update("home", { standingsTitle: value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <ContentField label="League tab" value={draft.home.leagueTabLabel} onChange={(value) => update("home", { leagueTabLabel: value })} />
+                <ContentField label="Championship tab" value={draft.home.championshipTabLabel} onChange={(value) => update("home", { championshipTabLabel: value })} />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <ContentField label="Players label" value={draft.home.playerLabel} onChange={(value) => update("home", { playerLabel: value })} />
+                <ContentField label="Teams label" value={draft.home.teamLabel} onChange={(value) => update("home", { teamLabel: value })} />
+                <ContentField label="Nights label" value={draft.home.nightLabel} onChange={(value) => update("home", { nightLabel: value })} />
+              </div>
+            </ContentGroup>
+
+            <ContentGroup title="Schedule, rules, and payments">
+              <ContentField label="Schedule title" value={draft.schedule.title} onChange={(value) => update("schedule", { title: value })} />
+              <ContentField label="Schedule intro" value={draft.schedule.intro} onChange={(value) => update("schedule", { intro: value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <ContentField label="League phase label" value={draft.schedule.leaguePhaseLabel} onChange={(value) => update("schedule", { leaguePhaseLabel: value })} />
+                <ContentField label="Championship label" value={draft.schedule.championshipLabel} onChange={(value) => update("schedule", { championshipLabel: value })} />
+              </div>
+              <ContentField label="Awards label" value={draft.schedule.awardsLabel} onChange={(value) => update("schedule", { awardsLabel: value })} />
+              <ContentField label="Payments title" value={draft.banking.title} onChange={(value) => update("banking", { title: value })} />
+              <ContentField label="Payments intro" value={draft.banking.intro} onChange={(value) => update("banking", { intro: value })} />
+              <ContentField label="Rules card title" value={draft.rules.cardTitle} onChange={(value) => update("rules", { cardTitle: value })} />
+              <ContentField label="Rules subtitle" value={draft.rules.subtitle} onChange={(value) => update("rules", { subtitle: value })} />
+              <ContentField label="Rules footer" value={draft.rules.footer} onChange={(value) => update("rules", { footer: value })} />
+              <ContentField label="Footer caption" value={draft.footer.trackerLabel} onChange={(value) => update("footer", { trackerLabel: value })} />
+            </ContentGroup>
+
+            <ContentGroup title="Navigation labels">
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.entries(draft.navigation) as [keyof SiteContent["navigation"], string][]).map(([key, value]) => (
+                  <ContentField key={key} label={key} value={value} onChange={(next) => update("navigation", { [key]: next })} />
+                ))}
+              </div>
+            </ContentGroup>
+          </div>
+        ) : null}
+
+        {tab === "images" ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]">
+              <ImagePlus className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-[10px] leading-relaxed text-muted-foreground">Upload a transparent team logo to Supabase or paste a public image URL. Square PNG, WebP, or SVG-style images display best in standings, players, fixtures, and schedules.</p>
+            </div>
+            {teamNames.map((team) => (
+              <div key={team} className="flex items-center gap-2 rounded-xl bg-white/[0.02] p-2 ring-1 ring-white/[0.05]">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/70 p-1 ring-1 ring-white/[0.06]">
+                  {getTeamLogo(draft, team) ? <img src={getTeamLogo(draft, team)} alt="" className="h-full w-full object-contain" /> : <span className="text-[8px] font-bold text-muted-foreground">{team.slice(0, 3)}</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1 truncate text-[10px] font-semibold uppercase tracking-wide text-foreground">{team}</p>
+                  <div className="space-y-1.5"><Input value={draft.teamLogos[team] ?? ""} onChange={(event) => update("teamLogos", { [team]: event.target.value })} className="h-8 bg-background/40 text-[10px]" placeholder="https://…" /><Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploadingTeam === team} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadTeamLogo(team, file); }} className="h-8 bg-background/40 text-[9px]" />{uploadingTeam === team ? <p className="text-[9px] text-primary">Uploading logo…</p> : null}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {tab === "advanced" ? (
+          <div className="space-y-3">
+            <p className="text-[10px] leading-relaxed text-muted-foreground">This export is the complete content model used by the public interface. It is useful for bulk edits, duplicating a season, or keeping a copy of your configuration. Apply the JSON before saving it.</p>
+            <Textarea value={rawContent} onChange={(event) => setRawContent(event.target.value)} className="min-h-[390px] bg-background/40 font-mono text-[9px] leading-relaxed" spellCheck={false} />
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="secondary" onClick={applyJson}>Apply JSON</Button>
+              <Button type="button" variant="outline" onClick={restoreDefaults} className="gap-1.5"><RotateCcw className="h-3.5 w-3.5" /> Reset draft</Button>
+            </div>
+          </div>
+        ) : null}
+
+        <Button type="button" onClick={save} disabled={saving} className="w-full gap-2">
+          <Save className="h-4 w-4" /> {saving ? "Publishing…" : "Publish frontend changes"}
+        </Button>
+      </div>
+    </SectionCard>
+  );
+}
+
+function ContentTabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={`rounded-lg px-1 py-2 text-[9px] font-semibold uppercase tracking-wide transition ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{label}</button>;
+}
+
+function ContentGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return <div className="space-y-3 rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">{title}</p>{children}</div>;
+}
+
+function ContentField({ label, value, onChange, hint, multiline = false, type = "text" }: { label: string; value: string; onChange: (value: string) => void; hint?: string; multiline?: boolean; type?: "text" | "url" }) {
+  return <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>{multiline ? <Textarea value={value} onChange={(event) => onChange(event.target.value)} className="min-h-20 bg-background/40 text-[11px]" /> : <Input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-9 bg-background/40 text-[11px]" />}{hint ? <p className="text-[9px] leading-relaxed text-muted-foreground/80">{hint}</p> : null}</div>;
 }
 
 function TeamRankingsPanel() {
@@ -396,16 +784,7 @@ function usePlayers() {
   return useQuery<Player[]>({
     queryKey: ["players"],
     staleTime: QUERY_STALE_MS,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("players")
-        .select("id, name, team, ranking, category, is_captain")
-        .order("team")
-        .order("ranking", { ascending: true, nullsFirst: false })
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as unknown as Player[];
-    },
+    queryFn: fetchPlayers,
   });
 }
 
@@ -475,8 +854,19 @@ function MatchEntryPanel() {
   const qc = useQueryClient();
   const players = usePlayers();
   const [form, setForm] = useState<MatchForm>(emptyForm);
+  const team1Lineup = useQuery<LockedSeason5Lineup | null>({
+    queryKey: ["season5_locked_lineup", form.team1, form.played_at],
+    enabled: Boolean(form.team1 && form.played_at),
+    queryFn: () => fetchLockedSeason5Lineup(form.team1, form.played_at),
+  });
+  const team2Lineup = useQuery<LockedSeason5Lineup | null>({
+    queryKey: ["season5_locked_lineup", form.team2, form.played_at],
+    enabled: Boolean(form.team2 && form.played_at),
+    queryFn: () => fetchLockedSeason5Lineup(form.team2, form.played_at),
+  });
 
   const submit = async () => {
+    if (!team1Lineup.data || !team2Lineup.data) return toast.error("Lock a Season 5 lineup for both teams before recording games.");
     const err = validateForm(form);
     if (err) return toast.error(err);
     const payload = {
@@ -511,8 +901,8 @@ function MatchEntryPanel() {
 
   return (
     <SectionCard title="Record Match" icon={<Swords className="h-4 w-4 text-primary" />}>
-      <MatchFormFields form={form} setForm={setForm} players={players.data ?? []} />
-      <Button className="w-full mt-4" onClick={submit}>
+      <MatchFormFields form={form} setForm={setForm} players={players.data ?? []} team1Lineup={team1Lineup.data} team2Lineup={team2Lineup.data} lineupLoading={team1Lineup.isLoading || team2Lineup.isLoading} />
+      <Button className="w-full mt-4" onClick={submit} disabled={!team1Lineup.data || !team2Lineup.data}>
         Save match
       </Button>
     </SectionCard>
@@ -523,10 +913,16 @@ function MatchFormFields({
   form,
   setForm,
   players,
+  team1Lineup,
+  team2Lineup,
+  lineupLoading,
 }: {
   form: MatchForm;
   setForm: (f: MatchForm) => void;
   players: Player[];
+  team1Lineup: LockedSeason5Lineup | null | undefined;
+  team2Lineup: LockedSeason5Lineup | null | undefined;
+  lineupLoading: boolean;
 }) {
   const teams = useMemo(() => {
     const s = new Set<string>();
@@ -536,10 +932,12 @@ function MatchFormFields({
 
   const set = (patch: Partial<MatchForm>) => setForm({ ...form, ...patch });
 
-  const playersOnTeam = (team: string) => sortPlayers(players.filter((p) => p.team === team));
-
-  const playerOptions = (team: string, substitute: boolean) =>
-    substitute ? sortPlayers(players) : playersOnTeam(team);
+  const playerOptions = (team: string, lineup: LockedSeason5Lineup | null | undefined) => {
+    if (!lineup) return [];
+    const activeIds = new Set(lineup.players.filter((player) => player.lineup_status === "ACTIVE").map((player) => player.player_id));
+    return sortPlayers(players.filter((player) => player.team === team && activeIds.has(player.id)));
+  };
+  const playingTierById = (lineup: LockedSeason5Lineup | null | undefined) => new Map((lineup?.players ?? []).map((player) => [player.player_id, player.nightly_playing_tier]));
 
   return (
     <div className="space-y-3">
@@ -605,62 +1003,50 @@ function MatchFormFields({
       </div>
 
       {form.team1 ? (
-        <PairBlock label={`${form.team1} pair`}>
-          <SubstituteToggle
-            checked={form.team1_substitute}
-            onChange={(v) =>
-              set({
-                team1_substitute: v,
-                team1_player1_id: "",
-                team1_player2_id: "",
-              })
-            }
-          />
+        <PairBlock label={`${form.team1} active pair`}>
+
           <PlayerSelect
             value={form.team1_player1_id}
             onChange={(v) => set({ team1_player1_id: v })}
-            players={playerOptions(form.team1, form.team1_substitute)}
+            players={playerOptions(form.team1, team1Lineup)}
             exclude={[form.team1_player2_id]}
             playingTeam={form.team1}
+            nightlyTierById={playingTierById(team1Lineup)}
           />
           <PlayerSelect
             value={form.team1_player2_id}
             onChange={(v) => set({ team1_player2_id: v })}
-            players={playerOptions(form.team1, form.team1_substitute)}
+            players={playerOptions(form.team1, team1Lineup)}
             exclude={[form.team1_player1_id]}
             playingTeam={form.team1}
+            nightlyTierById={playingTierById(team1Lineup)}
           />
         </PairBlock>
       ) : null}
 
       {form.team2 ? (
-        <PairBlock label={`${form.team2} pair`}>
-          <SubstituteToggle
-            checked={form.team2_substitute}
-            onChange={(v) =>
-              set({
-                team2_substitute: v,
-                team2_player1_id: "",
-                team2_player2_id: "",
-              })
-            }
-          />
+        <PairBlock label={`${form.team2} active pair`}>
+
           <PlayerSelect
             value={form.team2_player1_id}
             onChange={(v) => set({ team2_player1_id: v })}
-            players={playerOptions(form.team2, form.team2_substitute)}
+            players={playerOptions(form.team2, team2Lineup)}
             exclude={[form.team2_player2_id]}
             playingTeam={form.team2}
+            nightlyTierById={playingTierById(team2Lineup)}
           />
           <PlayerSelect
             value={form.team2_player2_id}
             onChange={(v) => set({ team2_player2_id: v })}
-            players={playerOptions(form.team2, form.team2_substitute)}
+            players={playerOptions(form.team2, team2Lineup)}
             exclude={[form.team2_player1_id]}
             playingTeam={form.team2}
+            nightlyTierById={playingTierById(team2Lineup)}
           />
         </PairBlock>
       ) : null}
+
+      {form.team1 && form.team2 ? <p className={`rounded-xl px-3 py-2 text-[10px] leading-relaxed ring-1 ${team1Lineup && team2Lineup ? "bg-emerald-400/[0.06] text-emerald-200 ring-emerald-400/15" : "bg-amber-400/[0.06] text-amber-200 ring-amber-400/15"}`}>{lineupLoading ? "Checking locked Season 5 lineups…" : team1Lineup && team2Lineup ? "Only active players from the locked nightly lineups can be selected. Sit-out players and top-to-bottom replacements are unavailable." : "Generate and lock a Season 5 lineup for both teams on this date before recording games."}</p> : null}
 
       <div className="grid grid-cols-2 gap-2">
         <NumberField
@@ -751,12 +1137,14 @@ function PlayerSelect({
   players,
   exclude,
   playingTeam: _playingTeam,
+  nightlyTierById,
 }: {
   value: string;
   onChange: (v: string) => void;
   players: Player[];
   exclude: string[];
   playingTeam: string;
+  nightlyTierById?: Map<string, string>;
 }) {
   const options = players.filter((p) => !exclude.includes(p.id) || p.id === value);
   return (
@@ -767,7 +1155,7 @@ function PlayerSelect({
       <SelectContent>
         {options.map((p) => (
           <SelectItem key={p.id} value={p.id}>
-            {p.name} {p.category ? `· ${p.category}` : ""}
+            {p.name} {nightlyTierById?.get(p.id) ? `· Nightly ${nightlyTierById.get(p.id)}` : p.category ? `· Official ${p.category}` : ""}
             {p.team && p.team !== _playingTeam ? ` (${p.team})` : ""}
           </SelectItem>
         ))}
@@ -1237,6 +1625,16 @@ function MatchListPanel() {
     () => new Map((players.data ?? []).map((p) => [p.id, p])),
     [players.data],
   );
+  const editLineup1 = useQuery<LockedSeason5Lineup | null>({
+    queryKey: ["season5_locked_lineup", form.team1, form.played_at],
+    enabled: Boolean(editing && form.team1 && form.played_at),
+    queryFn: () => fetchLockedSeason5Lineup(form.team1, form.played_at),
+  });
+  const editLineup2 = useQuery<LockedSeason5Lineup | null>({
+    queryKey: ["season5_locked_lineup", form.team2, form.played_at],
+    enabled: Boolean(editing && form.team2 && form.played_at),
+    queryFn: () => fetchLockedSeason5Lineup(form.team2, form.played_at),
+  });
   const matchGroups = useMemo<MatchGroup[]>(() => {
     const byDate = new Map<string, MatchGroup>();
 
@@ -1300,6 +1698,7 @@ function MatchListPanel() {
   };
 
   const saveEdit = async () => {
+    if (!editLineup1.data || !editLineup2.data) return toast.error("Lock a Season 5 lineup for both teams before editing games.");
     const err = validateForm(form);
     if (err) return toast.error(err);
     if (!editing) return;
@@ -1475,8 +1874,8 @@ function MatchListPanel() {
                 Cancel
               </button>
             </div>
-            <MatchFormFields form={form} setForm={setForm} players={players.data ?? []} />
-            <Button onClick={saveEdit} className="w-full" size="sm">
+            <MatchFormFields form={form} setForm={setForm} players={players.data ?? []} team1Lineup={editLineup1.data} team2Lineup={editLineup2.data} lineupLoading={editLineup1.isLoading || editLineup2.isLoading} />
+            <Button onClick={saveEdit} className="w-full" size="sm" disabled={!editLineup1.data || !editLineup2.data}>
               Save changes
             </Button>
           </div>

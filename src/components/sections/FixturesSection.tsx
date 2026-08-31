@@ -3,7 +3,7 @@ import { SectionCard } from "@/components/SectionCard";
 import { memo, useMemo } from "react";
 import type { Match, Player } from "@/lib/scoring";
 import type { EliminatorMatch } from "@/lib/eliminators";
-import { teamLogos } from "@/lib/team-logos";
+import { defaultSiteContent, getTeamLogo, useSiteContent } from "@/lib/site-content";
 
 interface Props {
   players: Player[];
@@ -45,6 +45,8 @@ export const FixturesSection = memo(function FixturesSectionComponent({
   matches,
   eliminatorMatches = [],
 }: Props) {
+  const { data: configuredContent } = useSiteContent();
+  const content = configuredContent ?? defaultSiteContent;
   const playerById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const matchGroups = useMemo<MatchGroup[]>(() => {
     const byDate = new Map<string, MatchGroup>();
@@ -110,7 +112,7 @@ export const FixturesSection = memo(function FixturesSectionComponent({
                 className="rounded-xl bg-white/[0.02] ring-1 ring-white/[0.05] p-3 space-y-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <TeamFixtureHeading team1={fixture.team1} team2={fixture.team2} />
+                  <TeamFixtureHeading team1={fixture.team1} team2={fixture.team2} content={content} />
                   <span className="text-[8px] uppercase tracking-wider text-muted-foreground">
                     {fixture.matches.length} games
                   </span>
@@ -193,7 +195,7 @@ export const FixturesSection = memo(function FixturesSectionComponent({
                   className="rounded-xl bg-white/[0.02] ring-1 ring-white/[0.05] p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <TeamFixtureHeading team1={team1} team2={team2} />
+                    <TeamFixtureHeading team1={team1} team2={team2} content={content} />
                     <span className="text-[8px] uppercase tracking-wider text-muted-foreground">
                       1 game
                     </span>
@@ -251,22 +253,22 @@ export const FixturesSection = memo(function FixturesSectionComponent({
   );
 });
 
-function TeamFixtureHeading({ team1, team2 }: { team1: string; team2: string }) {
+function TeamFixtureHeading({ team1, team2, content }: { team1: string; team2: string; content: typeof defaultSiteContent }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <TeamBadge team={team1} />
+      <TeamBadge team={team1} content={content} />
       <span className="text-[9px] uppercase tracking-wider text-muted-foreground">vs</span>
-      <TeamBadge team={team2} />
+      <TeamBadge team={team2} content={content} />
     </div>
   );
 }
 
-function TeamBadge({ team }: { team: string }) {
+function TeamBadge({ team, content }: { team: string; content: typeof defaultSiteContent }) {
   return (
     <div className="flex items-center gap-1.5 min-w-0">
-      {teamLogos[team] ? (
+      {getTeamLogo(content, team) ? (
         <img
-          src={teamLogos[team]}
+          src={getTeamLogo(content, team)}
           alt={team}
           className="h-5 w-5 object-contain flex-shrink-0"
           loading="lazy"

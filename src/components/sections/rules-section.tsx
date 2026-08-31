@@ -2,6 +2,8 @@
 
 import { memo } from "react"
 import { SectionCard } from "@/components/SectionCard"
+import { defaultSiteContent, useSiteContent } from "@/lib/site-content"
+
 import {
   Accordion,
   AccordionContent,
@@ -76,7 +78,7 @@ const rulesData: RuleSection[] = [
       "7-player rosters",
       "League Phase + Championship Phase",
       "Tactical tier-based deployment system",
-      "Official DPL Season 4 format"
+      "Official DPL Season 5 format"
     ]
   },
   {
@@ -114,7 +116,8 @@ const rulesData: RuleSection[] = [
     icon: Calendar,
     title: "4. Match Night Structure",
     bullets: [
-      "Each Match Night contains 7 official matches:",
+      "A team will play 7 players each twice and one player will sit out each Match Night",
+      "The same player cannot sit out until all other players have sat out",
     ],
     subsections: [
       {
@@ -230,6 +233,13 @@ const rulesData: RuleSection[] = [
           "Core",
           "Dev"
         ]
+      },
+      {
+        label: "Important",
+        items: [
+          "See ?",
+          "Player handicaps apply throughout the league"
+        ]
       }
     ]
   },
@@ -270,7 +280,6 @@ const rulesData: RuleSection[] = [
     title: "10. Attendance & Eligibility",
     bullets: [
       "No player may play more than 2 matches per Match Night",
-      "Players must participate in at least 3 Match Nights to remain playoff eligible",
       "Captains are responsible for legal player deployment"
     ]
   },
@@ -279,7 +288,7 @@ const rulesData: RuleSection[] = [
     icon: AlertTriangle,
     title: "11. Late Arrival Policy",
     bullets: [
-      "Arriving 10 minutes late results in automatic forfeit",
+      "Arriving 5 minutes late results in automatic forfeit",
       "Opposing team receives maximum available points (4)",
       "No AGD or individual player statistics are awarded"
     ],
@@ -340,9 +349,12 @@ const rulesData: RuleSection[] = [
     ],
     subsections: [
       {
-        label: "Substitution Rules",
+        label: "Mandatory sit outs",
         items: [
-          "Players who communicate unavailability before a Match Night may be replaced",
+          "Players who communicate unavailability before a Match Night must plan so that it coincides with their mandatory sit out",
+          "If a players’ unavailability comes unexpectedly after they have already sat out once then the matches are forfeited 5-0.",
+          "There is no exception to this and no overruling, no voting among captains or no mutual consent between opposing captains or non opposing captains.",
+          "If a game is played with substitute players not in the official team, the score will be disregarded and the team with the unavailable player will lose 5-0.",
           "Replacement players must come from a non-opposing/sit-out team",
           "Replacement player must belong to the same tier",
           "Where multiple eligible replacements exist, the player with the closest auction value will replace the unavailable player",
@@ -388,9 +400,10 @@ const rulesData: RuleSection[] = [
     bullets: [
       "All official DPL matches are played at Game City courts",
       "Both courts remain reserved for DPL use during the entire booking duration",
-      "Adidas RX balls are supplied by the DPL",
+      "Wilson balls will be provided by the DPL to the captains.",
+      "3 new balls will be handed to both captains and it is their joint responsibility to recover and return all 3 balls at the end of the session",
       "Non-DPL players are not permitted to use the courts during official DPL booking times",
-      "Even if official matches finish early, only registered DPL Season 4 members may continue using the courts"
+      "Even if official matches finish early, only registered DPL Season 5 members may continue using the courts"
     ]
   },
   {
@@ -454,9 +467,9 @@ const rulesData: RuleSection[] = [
     ],
     subsections: [
       {
-        label: "Wednesday Match Nights",
+        label: "Friday Match Nights",
         items: [
-          "Final team list must be submitted in the captains group by Tuesday 2:00 PM"
+          "Final team list must be submitted in the captains group by Thursday 2:00 PM"
         ]
       },
       {
@@ -468,6 +481,7 @@ const rulesData: RuleSection[] = [
       {
         label: "Requirements",
         items: [
+          "Sit out must be clearly stated",
           "Match lineups must be submitted as Match 1 → Match 7",
           "Player tiers must be clearly labeled",
           "Abbreviations are acceptable: M1, M2, S, C, D"
@@ -513,8 +527,9 @@ const rulesData: RuleSection[] = [
     title: "20. Rearranging Match Sequence",
     bullets: [
       "Matches 1 → 7 should normally be played in official order",
-      "Opposing captains may privately agree to resequence matches",
-      "Any resequencing must be communicated to the League Commissioner",
+      "Opposing captains may privately agree to resequence matches, BUT the resquence must be communicated at 2pm on the prior day when line ups are sent",
+      "This will automatically ensure both captains send their games sequenced respectively.",
+      "Any resequencing done after 2pm will be disregarded and the original line up still stands , if a sequenced match is overdue the no show players will forfeit the game 5-0",
       "Fixtures must then be submitted in the updated order"
     ],
     subsections: [
@@ -548,13 +563,12 @@ const rulesData: RuleSection[] = [
       {
         label: "Fee Structure",
         items: [
-          "League Fee → P420",
-          "Team Kit → P75",
+          "League Fee → P450",
           "Americano Entry → P100 each"
         ]
       },
       {
-        label: "Payment Deadline: 27 May 2026",
+        label: "Payment Deadline: 31 Sep 2026",
         items: [
           "Players will be contacted by captains regarding payment",
           "Captains will share payment/eWallet details"
@@ -663,11 +677,9 @@ const rulesData: RuleSection[] = [
       {
         label: "Rounds",
         items: [
-          "Q1 (Qualifier)",
           "E1 & E2 (Eliminators)",
           "S1 & S2 (Semifinals)",
-          "Grand Final",
-          "5th/6th Playoff"
+          "Grand Final"
         ]
       },
       {
@@ -721,18 +733,24 @@ const rulesData: RuleSection[] = [
 ]
 
 export const RulesSection = memo(function RulesSectionComponent() {
+  const { data: configuredContent } = useSiteContent()
+  const content = configuredContent ?? defaultSiteContent
+
   return (
+
     <SectionCard
-      title="Official Rulebook"
+            title={content.rules.cardTitle}
+
       icon={<Diamond className="h-4 w-4 text-primary" />}
     >
       {/* Rulebook Header */}
       <div className="px-1 pb-4 mb-3 border-b border-white/[0.06]">
         <h2 className="text-center text-lg font-bold text-foreground tracking-tight mb-1">
-          Diamond Padel League
+          {content.brand.name}
         </h2>
         <p className="text-center text-[10px] text-muted-foreground uppercase tracking-widest">
-          Season 4 Official Rules & Regulations
+                    {content.rules.subtitle}
+
         </p>
       </div>
 
@@ -811,7 +829,8 @@ export const RulesSection = memo(function RulesSectionComponent() {
       {/* Footer */}
       <div className="mt-4 pt-3 border-t border-white/[0.06] text-center">
         <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wider">
-          Diamond Padel League — Gaborone, Botswana
+                    {content.rules.footer}
+
         </p>
       </div>
     </SectionCard>

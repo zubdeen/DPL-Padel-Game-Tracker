@@ -16,6 +16,7 @@ export type PlayerCategory = "M1" | "M2" | "Star" | "Core" | "Dev";
 export type Player = {
   id: string;
   name: string;
+  avatar_url?: string | null;
   team?: string | null;
   ranking?: number | null;
   category?: PlayerCategory | string | null;

@@ -2,7 +2,7 @@ import { Shield, Star } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
 import { memo, useMemo } from "react";
 import type { Player } from "@/lib/scoring";
-import { teamLogos } from "@/lib/team-logos";
+import { defaultSiteContent, getTeamLogo, useSiteContent } from "@/lib/site-content";
 
 interface Props {
   players: Player[];
@@ -17,7 +17,10 @@ const CATEGORY_ORDER: Record<string, number> = {
 };
 
 export const TeamsSection = memo(function TeamsSectionComponent({ players }: Props) {
+  const { data: configuredContent } = useSiteContent();
+  const content = configuredContent ?? defaultSiteContent;
   const teamList = useMemo(() => {
+
     const teams = new Map<string, Player[]>();
 
     for (const p of players) {
@@ -62,10 +65,10 @@ export const TeamsSection = memo(function TeamsSectionComponent({ players }: Pro
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2.5">
-                  {teamLogos[team.name] ? (
+                  {getTeamLogo(content, team.name) ? (
                     <div className="relative h-8 w-8 rounded-lg bg-zinc-900/80 ring-1 ring-white/[0.08] overflow-hidden flex-shrink-0">
                       <img
-                        src={teamLogos[team.name]}
+                        src={getTeamLogo(content, team.name)}
                         alt={team.name}
                         loading="lazy"
                         decoding="async"

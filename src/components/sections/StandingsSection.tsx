@@ -2,7 +2,8 @@ import { Trophy } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
 import { computeTeamStandings, type Match, type Player } from "@/lib/scoring";
 import { TEAM_RANKING_STATUS_LABELS, type TeamRanking } from "@/lib/team-rankings";
-import { dplLogo, teamLogos } from "@/lib/team-logos";
+import { SeasonIdentity } from "@/components/SeasonIdentity";
+import { defaultSiteContent, getTeamLogo, useSiteContent } from "@/lib/site-content";
 import { memo, useMemo, useState } from "react";
 
 interface Props {
@@ -18,79 +19,16 @@ export const StandingsSection = memo(function StandingsSectionComponent({
 }: Props) {
   const standings = useMemo(() => computeTeamStandings(players, matches), [players, matches]);
   const [activeRanking, setActiveRanking] = useState<"league" | "overall">("overall");
+  const { data: configuredContent } = useSiteContent();
+  const content = configuredContent ?? defaultSiteContent;
+  const teamCount = new Set(players.map((player) => player.team).filter(Boolean)).size;
+  const matchNightCount = new Set(matches.map((match) => match.played_at.slice(0, 10))).size;
 
   return (
-    <div className="space-y-6">
-      {/* League header card */}
-      <SectionCard title="League Overview">
-        <div className="flex flex-col items-center text-center">
-          {/* DPL Logo */}
-          <div className="w-28 h-28 mb-4">
-            <img
-              src={dplLogo}
-              alt="Diamond Padel League"
-              loading="lazy"
-              decoding="async"
-              className="object-contain w-full h-full"
-            />
-          </div>
+    <div className="space-y-4">
+      <SeasonIdentity playerCount={players.length} teamCount={teamCount} matchNightCount={matchNightCount} />
 
-          {/* Main title */}
-          <h1 className="text-2xl font-bold tracking-tight leading-none text-foreground">
-            <span className="text-primary">Diamond</span> Padel League
-          </h1>
-
-          {/* Season badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-3 rounded-full bg-primary/10 border border-primary/20">
-            <Trophy className="h-3 w-3 text-primary" />
-            <span className="text-[10px] font-semibold text-primary uppercase tracking-[0.18em]">
-              Season 4
-            </span>
-          </div>
-
-          {/* Tagline */}
-          <p className="mt-4 text-muted-foreground text-[11px] leading-relaxed max-w-[250px]">
-            Gaborone&apos;s premier padel league. Where champions are forged.
-          </p>
-
-          {/* Divider */}
-          <div className="flex items-center justify-center gap-2 my-5 w-full">
-            <div className="h-px flex-1 max-w-[70px] bg-gradient-to-r from-transparent to-primary/40" />
-            <div className="h-1.5 w-1.5 rotate-45 bg-primary/50 rounded-[1px]" />
-            <div className="h-px flex-1 max-w-[70px] bg-gradient-to-l from-transparent to-primary/40" />
-          </div>
-
-          {/* Stats */}
-          <div className="flex items-center justify-center gap-6 w-full pt-1">
-            <div className="text-center">
-              <p className="text-lg font-bold text-foreground leading-none">42</p>
-              <p className="mt-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-                Players
-              </p>
-            </div>
-
-            <div className="h-6 w-px bg-primary/15" />
-
-            <div className="text-center">
-              <p className="text-lg font-bold text-primary leading-none">6</p>
-              <p className="mt-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-                Teams
-              </p>
-            </div>
-
-            <div className="h-6 w-px bg-primary/15" />
-
-            <div className="text-center">
-              <p className="text-lg font-bold text-foreground leading-none">8</p>
-              <p className="mt-1 text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-                Match Nights
-              </p>
-            </div>
-          </div>
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Team Standings" icon={<Trophy className="h-3.5 w-3.5 text-primary/70" />}>
+      <SectionCard title={content.home.standingsTitle} icon={<Trophy className="h-3.5 w-3.5 text-primary/70" />}>
         <div className="space-y-1">
           <div className="flex gap-1 p-1 mb-4 bg-zinc-900/50 rounded-xl ring-1 ring-white/[0.04]">
             {(["league", "overall"] as const).map((ranking) => (
@@ -104,15 +42,15 @@ export const StandingsSection = memo(function StandingsSectionComponent({
                     : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
                 }`}
               >
-                {ranking === "league" ? "League Phase" : "Championship Ranking"}
+                {ranking === "league" ? content.home.leagueTabLabel : content.home.championshipTabLabel}
               </button>
             ))}
           </div>
 
           {activeRanking === "league" ? (
-            <LeagueStandings standings={standings} />
+            <LeagueStandings standings={standings} content={content} />
           ) : (
-            <OverallRankings rankings={teamRankings} />
+            <OverallRankings rankings={teamRankings} content={content} />
           )}
         </div>
       </SectionCard>
@@ -120,7 +58,7 @@ export const StandingsSection = memo(function StandingsSectionComponent({
   );
 });
 
-function LeagueStandings({ standings }: { standings: ReturnType<typeof computeTeamStandings> }) {
+function LeagueStandings({ standings, content }: { standings: ReturnType<typeof computeTeamStandings>; content: typeof defaultSiteContent }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center px-2 py-2 text-[7px] uppercase tracking-widest text-muted-foreground font-medium border-b border-white/[0.04]">
@@ -156,7 +94,7 @@ function LeagueStandings({ standings }: { standings: ReturnType<typeof computeTe
             </span>
             <div className="flex items-center gap-2 flex-1 pl-1 min-w-0">
               <img
-                src={teamLogos[team.team]}
+                src={getTeamLogo(content, team.team)}
                 alt={team.team}
                 className="w-5 h-5 object-contain flex-shrink-0"
                 loading="lazy"
@@ -193,7 +131,7 @@ function LeagueStandings({ standings }: { standings: ReturnType<typeof computeTe
   );
 }
 
-function OverallRankings({ rankings }: { rankings: TeamRanking[] }) {
+function OverallRankings({ rankings, content }: { rankings: TeamRanking[]; content: typeof defaultSiteContent }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center px-2 py-2 text-[7px] uppercase tracking-widest text-muted-foreground font-medium border-b border-white/[0.04]">
@@ -222,7 +160,7 @@ function OverallRankings({ rankings }: { rankings: TeamRanking[] }) {
             </span>
             <div className="flex items-center gap-2 flex-1 pl-2 min-w-0">
               <img
-                src={teamLogos[ranking.team]}
+                src={getTeamLogo(content, ranking.team)}
                 alt={ranking.team}
                 className="w-6 h-6 object-contain flex-shrink-0"
                 loading="lazy"

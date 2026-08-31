@@ -155,6 +155,7 @@ export type Database = {
       };
       players: {
         Row: {
+          avatar_url: string | null;
           category: string | null;
           created_at: string;
           id: string;
@@ -164,6 +165,7 @@ export type Database = {
           team: string | null;
         };
         Insert: {
+          avatar_url?: string | null;
           category?: string | null;
           created_at?: string;
           id?: string;
@@ -173,6 +175,7 @@ export type Database = {
           team?: string | null;
         };
         Update: {
+          avatar_url?: string | null;
           category?: string | null;
           created_at?: string;
           id?: string;
@@ -180,6 +183,132 @@ export type Database = {
           name?: string;
           ranking?: number | null;
           team?: string | null;
+        };
+        Relationships: [];
+      };
+      season5_lineup_nights: {
+        Row: {
+          id: string;
+          team: string;
+          night_date: string;
+          status: "DRAFT" | "LOCKED" | "COMPLETED";
+          exception_reason: string | null;
+          created_at: string;
+          created_by: string | null;
+          locked_at: string | null;
+          locked_by: string | null;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          team: string;
+          night_date: string;
+          status?: "DRAFT" | "LOCKED" | "COMPLETED";
+          exception_reason?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          locked_at?: string | null;
+          locked_by?: string | null;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          team?: string;
+          night_date?: string;
+          status?: "DRAFT" | "LOCKED" | "COMPLETED";
+          exception_reason?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          locked_at?: string | null;
+          locked_by?: string | null;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      season5_lineup_players: {
+        Row: {
+          lineup_id: string;
+          player_id: string;
+          official_tier: string;
+          nightly_playing_tier: string;
+          lineup_status: "ACTIVE" | "SIT_OUT";
+          promotion_source_tier: string | null;
+          sort_order: number;
+        };
+        Insert: {
+          lineup_id: string;
+          player_id: string;
+          official_tier: string;
+          nightly_playing_tier: string;
+          lineup_status: "ACTIVE" | "SIT_OUT";
+          promotion_source_tier?: string | null;
+          sort_order: number;
+        };
+        Update: {
+          lineup_id?: string;
+          player_id?: string;
+          official_tier?: string;
+          nightly_playing_tier?: string;
+          lineup_status?: "ACTIVE" | "SIT_OUT";
+          promotion_source_tier?: string | null;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
+      season5_sit_out_ledger: {
+        Row: {
+          id: string;
+          team: string;
+          player_id: string;
+          official_tier: string;
+          total_sit_outs: number;
+          previous_sit_out_night: string | null;
+          current_sit_out_priority: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          team: string;
+          player_id: string;
+          official_tier: string;
+          total_sit_outs?: number;
+          previous_sit_out_night?: string | null;
+          current_sit_out_priority?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          team?: string;
+          player_id?: string;
+          official_tier?: string;
+          total_sit_outs?: number;
+          previous_sit_out_night?: string | null;
+          current_sit_out_priority?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      site_content: {
+        Row: {
+          content: Json;
+          id: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          content?: Json;
+          id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          content?: Json;
+          id?: string;
+          updated_at?: string;
+          updated_by?: string | null;
         };
         Relationships: [];
       };
@@ -235,10 +364,18 @@ export type Database = {
     Functions: {
       admin_claimed: { Args: never; Returns: boolean };
       claim_admin: { Args: never; Returns: boolean };
+      complete_season5_lineup: { Args: { target_lineup_id: string }; Returns: boolean };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
           _user_id: string;
+        };
+        Returns: boolean;
+      };
+      rename_team: {
+        Args: {
+          old_team: string;
+          new_team: string;
         };
         Returns: boolean;
       };

@@ -13,25 +13,26 @@ import {
   Minus
 } from "lucide-react"
 import { memo } from "react"
+import { defaultSiteContent, useSiteContent } from "@/lib/site-content"
 
 // DPL Fee Structure
 const feeStructure = [
   {
     id: "registration",
     title: "League Registration Fee",
-    amount: "P420",
-    description: "Season 4 player registration",
+    amount: "P450",
+    description: "Season 5 player registration",
     icon: CreditCard,
     required: true,
   },
-  {
-    id: "kit",
-    title: "Official Team Kit Fee",
-    amount: "P75",
-    description: "DPL branded team apparel",
-    icon: Users,
-    required: true,
-  },
+  // {
+  //   id: "kit",
+  //   title: "Official Team Kit Fee",
+  //   amount: "P75",
+  //   description: "DPL branded team apparel",
+  //   icon: Users,
+  //   required: true,
+  // },
   {
     id: "americano",
     title: "Americano Entry",
@@ -66,7 +67,11 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
 }
 
 export const BankingSection = memo(function BankingSectionComponent() {
+  const { data: configuredContent } = useSiteContent()
+  const content = configuredContent ?? defaultSiteContent
+
   return (
+
     <div className="space-y-4">
       {/* Header Section */}
       <div className="py-4 text-center">
@@ -82,10 +87,12 @@ export const BankingSection = memo(function BankingSectionComponent() {
           </div> */}
         </div>
         <h1 className="text-lg font-bold tracking-tight text-foreground uppercase">
-          Payments & Wallet
+                    {content.banking.title}
+
         </h1>
         <p className="text-[10px] text-muted-foreground mt-1">
-          Official DPL registration and participation payments
+                    {content.banking.intro}
+
         </p>
       </div>
 
@@ -158,12 +165,12 @@ export const BankingSection = memo(function BankingSectionComponent() {
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Total Required Fees
               </p>
-              <p className="text-[9px] text-muted-foreground/70">
+              {/* <p className="text-[9px] text-muted-foreground/70">
                 Registration + Kit
-              </p>
+              </p> */}
             </div>
             <p className="text-xl font-bold text-foreground">
-              P495
+              P450
             </p>
           </div>
         </div>

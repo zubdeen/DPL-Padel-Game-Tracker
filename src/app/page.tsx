@@ -21,12 +21,16 @@ import { fetchMatches } from "@/lib/match-data";
 import { fetchTeamRankings } from "@/lib/team-rankings";
 import type { EliminatorMatch } from "@/lib/eliminators";
 import type { Match, Player } from "@/lib/scoring";
+import { defaultSiteContent, useSiteContent } from "@/lib/site-content";
+import { fetchPlayers } from "@/lib/player-data";
 
 const QUERY_STALE_MS = 1000 * 60 * 5;
 
 export default function Index() {
   const router = useRouter();
   const { isAdmin } = useAuth();
+  const { data: configuredContent } = useSiteContent();
+  const siteContent = configuredContent ?? defaultSiteContent;
   const [activeTab, setActiveTab] = useState<TabId>("standings");
   const [isTransitioning, setIsTransitioning] = useState(false);
   const scrollPositions = useRef<Record<TabId, number>>({
@@ -44,16 +48,7 @@ export default function Index() {
   const players = useQuery<Player[]>({
     queryKey: ["players"],
     staleTime: QUERY_STALE_MS,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("players")
-        .select("id, name, team, ranking, category, is_captain")
-        .order("team")
-        .order("ranking", { ascending: true, nullsFirst: false })
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as unknown as Player[];
-    },
+    queryFn: fetchPlayers,
   });
 
   const matches = useQuery<Match[]>({
@@ -137,7 +132,7 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background flex justify-center">
       <main className="w-full max-w-[420px] relative">
-        <Navigation activeTab={activeTab} onTabChange={handleTabChange} showAdmin={isAdmin} />
+        <Navigation activeTab={activeTab} onTabChange={handleTabChange} showAdmin={isAdmin} labels={siteContent.navigation} />
         <div className="px-5 pb-10 pt-20">
           <div
             className={`transition-all duration-200 ease-out ${
