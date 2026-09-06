@@ -141,12 +141,12 @@ function ViewAllPlayersCard() {
   const router = useRouter();
 
   return (
-    <SectionCard title="Tournament Roster" icon={<Users className="h-4 w-4 text-primary" />}>
+    <SectionCard title="Roster Administration" icon={<Users className="h-4 w-4 text-primary" />}>
       <p className="text-[10px] text-muted-foreground leading-relaxed mb-3">
-        View the full player roster and team assignments on a dedicated page.
+        Add, edit, delete, and organize players and team assignments from the roster manager.
       </p>
       <Button className="w-full" onClick={() => router.push("/roster")}>
-        View all players
+        Open roster manager
       </Button>
     </SectionCard>
   );
@@ -170,7 +170,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Content
+        Content Studio
       </button>
       <button
         type="button"
@@ -181,7 +181,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Schedule
+        Fixture Schedule
       </button>
       <button
         type="button"
@@ -192,7 +192,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        League
+        Record League Match
       </button>
       <button
         type="button"
@@ -203,7 +203,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Eliminators
+        Eliminator Results
       </button>
       <button
         type="button"
@@ -214,7 +214,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Rankings
+        Team Standings
       </button>
       <button
         type="button"
@@ -225,7 +225,7 @@ function AdminPanelSwitch({
             : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        Season 5
+        Season 5 Lineups
       </button>
     </div>
   );

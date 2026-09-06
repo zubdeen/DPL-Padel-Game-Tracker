@@ -18,7 +18,7 @@ export const StandingsSection = memo(function StandingsSectionComponent({
   teamRankings,
 }: Props) {
   const standings = useMemo(() => computeTeamStandings(players, matches), [players, matches]);
-  const [activeRanking, setActiveRanking] = useState<"league" | "overall">("overall");
+  const [activeRanking, setActiveRanking] = useState<"league" | "overall">("league");
   const { data: configuredContent } = useSiteContent();
   const content = configuredContent ?? defaultSiteContent;
   const teamCount = new Set(players.map((player) => player.team).filter(Boolean)).size;
@@ -31,7 +31,7 @@ export const StandingsSection = memo(function StandingsSectionComponent({
       <SectionCard title={content.home.standingsTitle} icon={<Trophy className="h-3.5 w-3.5 text-primary/70" />}>
         <div className="space-y-1">
           <div className="flex gap-1 p-1 mb-4 bg-zinc-900/50 rounded-xl ring-1 ring-white/[0.04]">
-            {(["league", "overall"] as const).map((ranking) => (
+            {(["league"] as const).map((ranking) => (
               <button
                 key={ranking}
                 type="button"
@@ -42,16 +42,15 @@ export const StandingsSection = memo(function StandingsSectionComponent({
                     : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
                 }`}
               >
-                {ranking === "league" ? content.home.leagueTabLabel : content.home.championshipTabLabel}
+                {content.home.leagueTabLabel}
               </button>
             ))}
           </div>
 
-          {activeRanking === "league" ? (
-            <LeagueStandings standings={standings} content={content} />
-          ) : (
-            <OverallRankings rankings={teamRankings} content={content} />
-          )}
+          <LeagueStandings standings={standings} content={content} />
+          {/* Championship ranking is temporarily hidden.
+          {activeRanking === "overall" && <OverallRankings rankings={teamRankings} content={content} />}
+          */}
         </div>
       </SectionCard>
     </div>
