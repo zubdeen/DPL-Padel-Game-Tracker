@@ -16,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { defaultSiteContent, saveSiteContent, useSiteContent, type SiteContent } from "@/lib/site-content";
-import { ELIMINATOR_CATEGORY_HANDICAP } from "@/lib/eliminators";
 import { ArrowLeft, ImagePlus, Pencil, Plus, Save, Star, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Player } from "@/lib/scoring";
@@ -25,8 +24,8 @@ import { SEASON5_REQUIRED_ROSTER, SEASON5_TIERS, getSeason5TierCounts, normalize
 
 const CATEGORY_ORDER: Record<string, number> = { M1: 1, M2: 2, Star: 3, Core: 4, Dev: 5 };
 const CATEGORIES = ["M1", "M2", "Star", "Core", "Dev"];
-type PlayerDraft = Pick<Player, "id" | "name" | "avatar_url" | "team" | "ranking" | "category" | "is_captain">;
-type NewPlayerDraft = { name: string; team: string; category: string; ranking: string };
+type PlayerDraft = Pick<Player, "id" | "name" | "avatar_url" | "team" | "category" | "is_captain">;
+type NewPlayerDraft = { name: string; team: string; category: string };
 
 export default function RosterPage() {
   const { user, isAdmin, loading } = useAuth();
@@ -66,7 +65,7 @@ function groupByTeam(players: Player[]) {
 function Season5RosterSummary({ groups }: { groups: [string, Player[]][] }) {
   return <SectionCard title="Season 5 Roster Rules" icon={<Users className="h-4 w-4 text-primary" />}>
     <div className="space-y-3">
-      <p className="text-[10px] leading-relaxed text-muted-foreground">Each team must have exactly 8 official players: 1 M1, 1 M2, 2 Stars, 2 Cores, and 2 Developing. Nightly promotions are temporary and do not change these official assignments.</p>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">Each team must have exactly 8 official players: 1 M1, 1 M2, 2 Stars, 2 Cores, and 2 Developing players. One player sits out each night, leaving 7 active players. Nightly promotions are temporary and do not change official assignments.</p>
       {groups.filter(([team]) => team !== "Unassigned").map(([team, roster]) => {
         const counts = getSeason5TierCounts(roster);
         const issues = validateSeason5Roster(roster);
@@ -81,10 +80,9 @@ function Season5RosterSummary({ groups }: { groups: [string, Player[]][] }) {
   </SectionCard>;
 }
 
-function AddPlayerCard({ teams, siteContent, onAdded }: { teams: string[]; siteContent: SiteContent; onAdded: () => void }) {
-  const [draft, setDraft] = useState<NewPlayerDraft>({ name: "", team: teams[0] ?? "", category: "", ranking: "" });
+function AddPlayerCard({ teams, onAdded }: { teams: string[]; onAdded: () => void }) {
+  const [draft, setDraft] = useState<NewPlayerDraft>({ name: "", team: teams[0] ?? "", category: "" });
   const [photo, setPhoto] = useState<File | null>(null);
-  const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -96,16 +94,13 @@ function AddPlayerCard({ teams, siteContent, onAdded }: { teams: string[]; siteC
     const team = draft.team.trim();
     const category = normalizeSeason5Tier(draft.category);
     if (!name || !team || !category) return toast.error("Enter a name, team, and official Season 5 tier.");
-    const ranking = draft.ranking.trim() ? Number(draft.ranking) : null;
-    if (ranking !== null && (!Number.isInteger(ranking) || ranking < 1)) return toast.error("Ranking must be a positive whole number.");
     if (photo && (!photo.type.startsWith("image/") || photo.size > 5 * 1024 * 1024)) return toast.error("Choose an image no larger than 5 MB.");
-    if (teamLogo && (!teamLogo.type.startsWith("image/") || teamLogo.size > 5 * 1024 * 1024)) return toast.error("Choose a team-logo image no larger than 5 MB.");
     setSaving(true);
-    const fullInsert = await supabase.from("players").insert({ name, team, category, ranking, is_captain: false }).select("id").single();
+    const fullInsert = await supabase.from("players").insert({ name, team, category, is_captain: false }).select("id").single();
     let playerId = fullInsert.data?.id as string | undefined;
     let insertError = fullInsert.error;
     if (isMissingPlayerAvatarColumn(fullInsert.error)) {
-      const legacyInsert = await supabase.from("players").insert({ name, team, category, ranking, is_captain: false }).select("id").single();
+      const legacyInsert = await supabase.from("players").insert({ name, team, category, is_captain: false }).select("id").single();
       playerId = legacyInsert.data?.id as string | undefined;
       insertError = legacyInsert.error;
     }
@@ -127,23 +122,9 @@ function AddPlayerCard({ teams, siteContent, onAdded }: { teams: string[]; siteC
         if (avatarError) imageWarning = isMissingPlayerAvatarColumn(avatarError) ? " Player saved; apply the avatar migration to store the picture." : ` Player saved, but the picture could not be linked: ${avatarError.message}`;
       }
     }
-    if (teamLogo) {
-      const extension = teamLogo.name.split(".").pop()?.toLowerCase() || "png";
-      const safeTeam = team.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const path = `teams/${safeTeam}-${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage.from("dpl-media").upload(path, teamLogo, { upsert: true, contentType: teamLogo.type });
-      if (uploadError) {
-        imageWarning += ` Team logo could not be uploaded: ${uploadError.message}`;
-      } else {
-        const { data } = supabase.storage.from("dpl-media").getPublicUrl(path);
-        const { error: contentError } = await saveSiteContent({ ...siteContent, teamLogos: { ...siteContent.teamLogos, [team]: data.publicUrl } });
-        if (contentError) imageWarning += ` Team logo uploaded but could not be published: ${contentError.message}`;
-      }
-    }
     setSaving(false);
-    setDraft({ name: "", team, category: "", ranking: "" });
+    setDraft({ name: "", team, category: "" });
     setPhoto(null);
-    setTeamLogo(null);
     onAdded();
     if (imageWarning) toast.warning(`Player added to the official roster.${imageWarning}`);
     else toast.success("Player added to the official roster");
@@ -157,9 +138,7 @@ function AddPlayerCard({ teams, siteContent, onAdded }: { teams: string[]; siteC
         <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Team</Label><Select value={draft.team || "none"} onValueChange={(team) => setDraft({ ...draft, team: team === "none" ? "" : team })}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose team" /></SelectTrigger><SelectContent><SelectItem value="none">Choose team</SelectItem>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select><p className="text-[9px] leading-relaxed text-muted-foreground">Choose an existing team.</p></div>
         <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Official tier</Label><Select value={draft.category || "none"} onValueChange={(category) => setDraft({ ...draft, category: category === "none" ? "" : category })}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose tier" /></SelectTrigger><SelectContent><SelectItem value="none">Choose tier</SelectItem>{CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select></div>
       </div>
-      <PlayerField label="Team ranking" value={draft.ranking} onChange={(ranking) => setDraft({ ...draft, ranking })} hint="Optional positive whole number." />
       <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Player picture</Label><Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setPhoto(event.target.files?.[0] ?? null)} disabled={saving} className="h-9 bg-background/40 text-[10px]" /><p className="text-[9px] text-muted-foreground">Optional JPEG, PNG, WebP, or GIF · maximum 5 MB{photo ? ` · ${photo.name}` : ""}</p></div>
-      <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Team picture / logo</Label><Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => setTeamLogo(event.target.files?.[0] ?? null)} disabled={saving} className="h-9 bg-background/40 text-[10px]" /><p className="text-[9px] text-muted-foreground">Optional team image · maximum 5 MB{teamLogo ? ` · ${teamLogo.name}` : ""}</p></div>
       <Button type="button" className="w-full gap-2" onClick={addPlayer} disabled={saving}><Plus className="h-4 w-4" /> {saving ? "Adding…" : "Add player"}</Button>
     </div>
   </SectionCard>;
@@ -204,7 +183,7 @@ function RosterManager() {
     }
 
     setSaving(true);
-    const { error } = await supabase.from("players").update({ name, avatar_url: editing.avatar_url || null, team: nextTeam, ranking: editing.ranking ?? null, category: nextCategory, is_captain: editing.is_captain === true }).eq("id", editing.id);
+    const { error } = await supabase.from("players").update({ name, avatar_url: editing.avatar_url || null, team: nextTeam, category: nextCategory, is_captain: editing.is_captain === true }).eq("id", editing.id);
     setSaving(false);
     if (error) return toast.error(error.message);
     queryClient.invalidateQueries({ queryKey: ["players"] });
@@ -314,7 +293,7 @@ function RosterManager() {
 
   return <div className="space-y-4">
     <Season5RosterSummary groups={groups} />
-    <AddPlayerCard teams={teams} siteContent={siteContent ?? defaultSiteContent} onAdded={() => { void queryClient.invalidateQueries({ queryKey: ["players"] }); void queryClient.invalidateQueries({ queryKey: ["site_content"] }); }} />
+    <AddPlayerCard teams={teams} onAdded={() => { void queryClient.invalidateQueries({ queryKey: ["players"] }); void queryClient.invalidateQueries({ queryKey: ["site_content"] }); }} />
     <SectionCard title="Player Directory" icon={<Users className="h-4 w-4 text-primary" />}>
       <div className="space-y-3">
         <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-3"><p className="text-[10px] leading-relaxed text-muted-foreground">Use the row actions to edit a player in the side panel or delete a player. Historical-match and locked-lineup safeguards remain active.</p></div>
@@ -326,12 +305,11 @@ function RosterManager() {
 
     <Sheet open={Boolean(editing)} onOpenChange={(open) => { if (!open) setEditing(null); }}>
       <SheetContent side="right" className="w-full overflow-y-auto border-l border-white/[0.08] bg-card sm:max-w-md">
-        <SheetHeader className="mb-5 pr-8 text-left"><SheetTitle className="text-base text-foreground">Edit Player</SheetTitle><SheetDescription className="text-[10px] leading-relaxed">Update roster assignment, handicap, captain status, or profile picture. Season 5 structure checks still apply.</SheetDescription></SheetHeader>
+        <SheetHeader className="mb-5 pr-8 text-left"><SheetTitle className="text-base text-foreground">Edit Player</SheetTitle><SheetDescription className="text-[10px] leading-relaxed">Update roster assignment, official tier, captain status, or profile picture. Season 5 structure checks still apply.</SheetDescription></SheetHeader>
         {editing ? <div className="space-y-3">
           <div className="flex items-center gap-3 rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]"><div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-background/60 ring-1 ring-white/[0.07]">{editing.avatar_url ? <img src={editing.avatar_url} alt="" className="h-full w-full object-cover" /> : <span className="text-[10px] text-muted-foreground">No photo</span>}</div><div className="min-w-0 flex-1"><Label className="mb-1.5 block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Profile picture</Label><Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadPlayerPhoto(file); }} disabled={uploading} className="h-9 bg-background/40 text-[10px]" /><div className="mt-1 flex items-center justify-between gap-2"><p className="text-[9px] text-muted-foreground">{uploading ? "Uploading…" : "JPEG, PNG, WebP, or GIF · maximum 5 MB"}</p><Button type="button" variant="ghost" className="h-7 shrink-0 px-2 text-[9px] text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setEditing({ ...editing, avatar_url: null })} disabled={!editing.avatar_url || uploading}>Remove picture</Button></div></div></div>
           <PlayerField label="Player name" value={editing.name} onChange={(name) => setEditing({ ...editing, name })} />
           <div className="grid grid-cols-2 gap-2"><div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Team assignment</Label><Select value={editing.team ?? "none"} onValueChange={(team) => setEditing({ ...editing, team: team === "none" ? null : team })}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose team" /></SelectTrigger><SelectContent><SelectItem value="none">No team</SelectItem>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select><p className="text-[9px] leading-relaxed text-muted-foreground">Use team rename for a full-roster change.</p></div><div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Official tier</Label><Select value={editing.category ?? "none"} onValueChange={(value) => setEditing({ ...editing, category: value === "none" ? null : value })}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">No tier</SelectItem>{CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select></div></div>
-          <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Player handicap</Label><Input readOnly value={ELIMINATOR_CATEGORY_HANDICAP[String(editing.category ?? "Dev")] ?? 0} className="h-9 bg-background/40 text-[11px]" /><p className="text-[9px] text-muted-foreground">Calculated from the official tier for eliminator matches.</p></div>
           <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-white/[0.02] px-3 py-2.5 ring-1 ring-white/[0.05]"><Checkbox checked={editing.is_captain === true} onCheckedChange={(checked) => setEditing({ ...editing, is_captain: checked === true })} /><span className="text-[11px] text-foreground">Team captain</span></label>
           <div className="grid grid-cols-2 gap-2 pt-1"><Button type="button" variant="outline" onClick={() => setEditing(null)}><X className="mr-1.5 h-3.5 w-3.5" /> Cancel</Button><Button type="button" onClick={savePlayer} disabled={saving || uploading}><Save className="mr-1.5 h-3.5 w-3.5" /> {saving ? "Saving…" : "Save changes"}</Button></div>
           <Button type="button" variant="ghost" className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setPendingDelete({ kind: "player", id: editing.id, label: editing.name })}><Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete player</Button>

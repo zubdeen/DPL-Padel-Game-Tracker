@@ -121,7 +121,21 @@ export function getCurrentSitOutPriority(players: Player[], ledger: Season5Ledge
   );
 }
 
-export function generateSeason5Lineup(players: Player[], sitOutPlayerId: string): Season5LineupResult {
+function getPromotionSourceTier(officialTier: Season5Tier, nightlyTier: Season5Tier): Season5Tier | null {
+  const officialIndex = TIER_INDEX.get(officialTier)!;
+  const nightlyIndex = TIER_INDEX.get(nightlyTier)!;
+  if (nightlyIndex === officialIndex) return null;
+  if (officialIndex - nightlyIndex !== 1) {
+    throw new Error("Every promotion must move up exactly one tier.");
+  }
+  return officialTier;
+}
+
+export function generateSeason5Lineup(
+  players: Player[],
+  sitOutPlayerId: string,
+  nightlyTierByPlayerId?: Map<string, Season5Tier>,
+): Season5LineupResult {
   const rosterIssues = validateSeason5Roster(players);
   if (rosterIssues.length > 0) throw new Error(rosterIssues.join(" "));
   if (!players.some((player) => player.id === sitOutPlayerId)) throw new Error("The selected sit-out player is not on this team.");
@@ -138,15 +152,27 @@ export function generateSeason5Lineup(players: Player[], sitOutPlayerId: string)
     });
   }
 
-  const sitOutIndex = TIER_INDEX.get(sitOutTier)!;
-  for (let targetIndex = sitOutIndex; targetIndex < SEASON5_TIERS.length - 1; targetIndex += 1) {
-    const sourceTier = SEASON5_TIERS[targetIndex + 1]!;
-    const targetTier = SEASON5_TIERS[targetIndex]!;
-    const candidate = sortSeason5Players(
-      activePlayers.filter((player) => normalizeSeason5Tier(player.category) === sourceTier && assignments.get(player.id)?.nightlyTier === sourceTier),
-    )[0];
-    if (!candidate) throw new Error(`No ${sourceTier} player is available to promote into ${targetTier}.`);
-    assignments.set(candidate.id, { nightlyTier: targetTier, promotionSourceTier: sourceTier });
+  if (nightlyTierByPlayerId) {
+    for (const player of activePlayers) {
+      const officialTier = normalizeSeason5Tier(player.category);
+      if (!officialTier) throw new Error("Every player must have an official Season 5 tier.");
+      const manualTier = nightlyTierByPlayerId.get(player.id) ?? officialTier;
+      assignments.set(player.id, {
+        nightlyTier: manualTier,
+        promotionSourceTier: getPromotionSourceTier(officialTier, manualTier),
+      });
+    }
+  } else {
+    const sitOutIndex = TIER_INDEX.get(sitOutTier)!;
+    for (let targetIndex = sitOutIndex; targetIndex < SEASON5_TIERS.length - 1; targetIndex += 1) {
+      const sourceTier = SEASON5_TIERS[targetIndex + 1]!;
+      const targetTier = SEASON5_TIERS[targetIndex]!;
+      const candidate = sortSeason5Players(
+        activePlayers.filter((player) => normalizeSeason5Tier(player.category) === sourceTier && assignments.get(player.id)?.nightlyTier === sourceTier),
+      )[0];
+      if (!candidate) throw new Error(`No ${sourceTier} player is available to promote into ${targetTier}.`);
+      assignments.set(candidate.id, { nightlyTier: targetTier, promotionSourceTier: sourceTier });
+    }
   }
 
   const lineupPlayers: Season5LineupPlayer[] = [

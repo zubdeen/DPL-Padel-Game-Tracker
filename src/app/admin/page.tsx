@@ -30,10 +30,8 @@ import { fetchEliminatorMatches } from "@/lib/eliminator-data";
 import { computeEliminatorStandings, type EliminatorMatch } from "@/lib/eliminators";
 import { teamLogos } from "@/lib/team-logos";
 import {
-  contentAsJson,
   defaultSiteContent,
   getTeamLogo,
-  parseSiteContent,
   saveSiteContent,
   useSiteContent,
   type SiteContent,
@@ -57,7 +55,6 @@ import {
   ListOrdered,
   ImagePlus,
   LayoutDashboard,
-  RotateCcw,
   Save,
   Settings2,
   CalendarDays,
@@ -318,7 +315,7 @@ function ScheduleManagerPanel() {
                 <ScheduleTeamSelect label="Home team" value={event.homeTeam} teams={teams} onChange={(homeTeam) => updateEvent(event.id, { homeTeam })} />
                 <ScheduleTeamSelect label="Away team" value={event.awayTeam} teams={teams} onChange={(awayTeam) => updateEvent(event.id, { awayTeam })} />
               </div>
-              <ScheduleInput label="Court / venue" value={event.court} onChange={(court) => updateEvent(event.id, { court })} placeholder="Court 1" />
+              <CourtChoiceButtons value={event.court} onChange={(court) => updateEvent(event.id, { court })} />
               <ContentField label="Notes" value={event.notes} onChange={(notes) => updateEvent(event.id, { notes })} multiline />
             </div>
           ))}
@@ -336,11 +333,36 @@ function ScheduleInput({ label, value, onChange, type = "text", placeholder }: {
   return <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label><Input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 bg-background/40 text-[11px]" /></div>;
 }
 
+function CourtChoiceButtons({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const options = ["Court 1", "Court 2"];
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Court / venue</Label>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((court) => (
+          <button
+            key={court}
+            type="button"
+            onClick={() => onChange(court)}
+            className={`rounded-lg px-3 py-2 text-[10px] font-semibold uppercase tracking-wider transition ${
+              value === court
+                ? "bg-primary text-primary-foreground"
+                : "bg-white/[0.03] text-muted-foreground hover:text-foreground ring-1 ring-white/[0.06]"
+            }`}
+          >
+            {court}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ScheduleTeamSelect({ label, value, teams, onChange }: { label: string; value: string; teams: string[]; onChange: (value: string) => void }) {
   return <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label><Select value={value || "tbc"} onValueChange={(next) => onChange(next === "tbc" ? "" : next)}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tbc">TBC</SelectItem>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select></div>;
 }
 
-type ContentEditorTab = "brand" | "sections" | "images" | "advanced";
+type ContentEditorTab = "brand" | "sections" | "images";
 
 function ContentManagerPanel() {
   const queryClient = useQueryClient();
@@ -348,14 +370,13 @@ function ContentManagerPanel() {
   const { data: content, isLoading, error } = useSiteContent();
   const [tab, setTab] = useState<ContentEditorTab>("brand");
   const [draft, setDraft] = useState<SiteContent>(defaultSiteContent);
-  const [rawContent, setRawContent] = useState(contentAsJson(defaultSiteContent));
   const [saving, setSaving] = useState(false);
   const [uploadingTeam, setUploadingTeam] = useState<string | null>(null);
+  const [uploadingBrandLogo, setUploadingBrandLogo] = useState(false);
 
   useEffect(() => {
     if (!content) return;
     setDraft(content);
-    setRawContent(contentAsJson(content));
   }, [content]);
 
   const update = <K extends keyof SiteContent>(section: K, patch: Partial<SiteContent[K]>) => {
@@ -377,24 +398,11 @@ function ContentManagerPanel() {
       return;
     }
     queryClient.setQueryData(["site_content"], draft);
-    setRawContent(contentAsJson(draft));
     toast.success("Frontend content published");
-  };
-
-  const applyJson = () => {
-    try {
-      const parsed = parseSiteContent(rawContent);
-      setDraft(parsed);
-      setRawContent(contentAsJson(parsed));
-      toast.success("JSON applied to the editor");
-    } catch {
-      toast.error("That JSON is not valid. Fix the formatting and try again.");
-    }
   };
 
   const restoreDefaults = () => {
     setDraft(defaultSiteContent);
-    setRawContent(contentAsJson(defaultSiteContent));
     toast.success("Default new-season copy restored in the editor");
   };
 
@@ -420,6 +428,29 @@ function ContentManagerPanel() {
     const { data } = supabase.storage.from("dpl-media").getPublicUrl(path);
     update("teamLogos", { [team]: data.publicUrl });
     toast.success("Team logo uploaded. Publish frontend changes to use it.");
+  };
+
+  const uploadBrandLogo = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Images must be 5 MB or smaller.");
+      return;
+    }
+    setUploadingBrandLogo(true);
+    const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+    const path = `brand/${Date.now()}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("dpl-media").upload(path, file, { upsert: true, contentType: file.type });
+    setUploadingBrandLogo(false);
+    if (uploadError) {
+      toast.error(`${uploadError.message} Apply the admin-content-media migration if the bucket is missing.`);
+      return;
+    }
+    const { data } = supabase.storage.from("dpl-media").getPublicUrl(path);
+    update("brand", { logoUrl: data.publicUrl });
+    toast.success("League logo uploaded. Publish frontend changes to use it.");
   };
 
   const teamNames = Array.from(
@@ -448,7 +479,6 @@ function ContentManagerPanel() {
           <ContentTabButton active={tab === "brand"} onClick={() => setTab("brand")} label="Brand" />
           <ContentTabButton active={tab === "sections"} onClick={() => setTab("sections")} label="Copy" />
           <ContentTabButton active={tab === "images"} onClick={() => setTab("images")} label="Images" />
-          <ContentTabButton active={tab === "advanced"} onClick={() => setTab("advanced")} label="JSON" />
         </div>
 
         {tab === "brand" ? (
@@ -462,6 +492,11 @@ function ContentManagerPanel() {
             <ContentField label="Season tagline" value={draft.brand.tagline} onChange={(value) => update("brand", { tagline: value })} multiline />
             <ContentField label="Location" value={draft.brand.location} onChange={(value) => update("brand", { location: value })} />
             <ContentField label="League logo URL" value={draft.brand.logoUrl} onChange={(value) => update("brand", { logoUrl: value })} type="url" hint="Paste a public HTTPS image URL." />
+            <div className="space-y-1.5">
+              <Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Or upload league logo</Label>
+              <Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploadingBrandLogo} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadBrandLogo(file); event.currentTarget.value = ""; }} className="h-9 bg-background/40 text-[10px]" />
+              <p className="text-[9px] leading-relaxed text-muted-foreground">{uploadingBrandLogo ? "Uploading league logo…" : "Optional JPEG, PNG, WebP, or GIF · maximum 5 MB"}</p>
+            </div>
             <ContentField label="Hero image URL" value={draft.brand.heroImageUrl} onChange={(value) => update("brand", { heroImageUrl: value })} type="url" hint="Optional. A landscape image is best; leave blank for the new gradient treatment." />
             <ContentField label="Hero image alt text" value={draft.brand.heroImageAlt} onChange={(value) => update("brand", { heroImageAlt: value })} />
           </div>
@@ -525,17 +560,6 @@ function ContentManagerPanel() {
                 </div>
               </div>
             ))}
-          </div>
-        ) : null}
-
-        {tab === "advanced" ? (
-          <div className="space-y-3">
-            <p className="text-[10px] leading-relaxed text-muted-foreground">This export is the complete content model used by the public interface. It is useful for bulk edits, duplicating a season, or keeping a copy of your configuration. Apply the JSON before saving it.</p>
-            <Textarea value={rawContent} onChange={(event) => setRawContent(event.target.value)} className="min-h-[390px] bg-background/40 font-mono text-[9px] leading-relaxed" spellCheck={false} />
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="secondary" onClick={applyJson}>Apply JSON</Button>
-              <Button type="button" variant="outline" onClick={restoreDefaults} className="gap-1.5"><RotateCcw className="h-3.5 w-3.5" /> Reset draft</Button>
-            </div>
           </div>
         ) : null}
 
@@ -808,8 +832,6 @@ function sortPlayers(players: Player[]) {
 type MatchForm = {
   team1: string;
   team2: string;
-  team1_substitute: boolean;
-  team2_substitute: boolean;
   team1_player1_id: string;
   team1_player2_id: string;
   team2_player1_id: string;
@@ -823,8 +845,6 @@ type MatchForm = {
 const emptyForm = (): MatchForm => ({
   team1: "",
   team2: "",
-  team1_substitute: false,
-  team2_substitute: false,
   team1_player1_id: "",
   team1_player2_id: "",
   team2_player1_id: "",
@@ -933,11 +953,15 @@ function MatchFormFields({
   const set = (patch: Partial<MatchForm>) => setForm({ ...form, ...patch });
 
   const playerOptions = (team: string, lineup: LockedSeason5Lineup | null | undefined) => {
-    if (!lineup) return [];
+    if (!lineup) return sortPlayers(players.filter((player) => player.team === team));
     const activeIds = new Set(lineup.players.filter((player) => player.lineup_status === "ACTIVE").map((player) => player.player_id));
     return sortPlayers(players.filter((player) => player.team === team && activeIds.has(player.id)));
   };
   const playingTierById = (lineup: LockedSeason5Lineup | null | undefined) => new Map((lineup?.players ?? []).map((player) => [player.player_id, player.nightly_playing_tier]));
+  const sitOutPlayerName = (lineup: LockedSeason5Lineup | null | undefined) =>
+    players.find((player) => player.id === lineup?.players.find((entry) => entry.lineup_status === "SIT_OUT")?.player_id)?.name ?? "Unknown";
+  const sitOutPlayerTier = (lineup: LockedSeason5Lineup | null | undefined) =>
+    lineup?.players.find((entry) => entry.lineup_status === "SIT_OUT")?.nightly_playing_tier ?? "Unknown";
 
   return (
     <div className="space-y-3">
@@ -951,7 +975,6 @@ function MatchFormFields({
             onValueChange={(v) =>
               set({
                 team1: v,
-                team1_substitute: false,
                 team1_player1_id: "",
                 team1_player2_id: "",
               })
@@ -980,7 +1003,6 @@ function MatchFormFields({
             onValueChange={(v) =>
               set({
                 team2: v,
-                team2_substitute: false,
                 team2_player1_id: "",
                 team2_player2_id: "",
               })
@@ -1004,7 +1026,6 @@ function MatchFormFields({
 
       {form.team1 ? (
         <PairBlock label={`${form.team1} active pair`}>
-
           <PlayerSelect
             value={form.team1_player1_id}
             onChange={(v) => set({ team1_player1_id: v })}
@@ -1023,10 +1044,14 @@ function MatchFormFields({
           />
         </PairBlock>
       ) : null}
+      {form.team1 && team1Lineup ? (
+        <p className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          Sit-out: <span className="text-foreground">{sitOutPlayerName(team1Lineup)} · {sitOutPlayerTier(team1Lineup)}</span>
+        </p>
+      ) : null}
 
       {form.team2 ? (
         <PairBlock label={`${form.team2} active pair`}>
-
           <PlayerSelect
             value={form.team2_player1_id}
             onChange={(v) => set({ team2_player1_id: v })}
@@ -1044,6 +1069,11 @@ function MatchFormFields({
             nightlyTierById={playingTierById(team2Lineup)}
           />
         </PairBlock>
+      ) : null}
+      {form.team2 && team2Lineup ? (
+        <p className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          Sit-out: <span className="text-foreground">{sitOutPlayerName(team2Lineup)} · {sitOutPlayerTier(team2Lineup)}</span>
+        </p>
       ) : null}
 
       {form.team1 && form.team2 ? <p className={`rounded-xl px-3 py-2 text-[10px] leading-relaxed ring-1 ${team1Lineup && team2Lineup ? "bg-emerald-400/[0.06] text-emerald-200 ring-emerald-400/15" : "bg-amber-400/[0.06] text-amber-200 ring-amber-400/15"}`}>{lineupLoading ? "Checking locked Season 5 lineups…" : team1Lineup && team2Lineup ? "Only active players from the locked nightly lineups can be selected. Sit-out players and top-to-bottom replacements are unavailable." : "Generate and lock a Season 5 lineup for both teams on this date before recording games."}</p> : null}
@@ -1090,21 +1120,6 @@ function PairBlock({ label, children }: { label: string; children: React.ReactNo
       <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="grid grid-cols-2 gap-2">{children}</div>
     </div>
-  );
-}
-
-function SubstituteToggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="col-span-2 flex items-center gap-2 rounded-xl bg-white/[0.02] ring-1 ring-white/[0.05] px-3 py-2 cursor-pointer">
-      <Checkbox checked={checked} onCheckedChange={(v) => onChange(v === true)} />
-      <span className="text-[11px] text-foreground">Substitute from any team</span>
-    </label>
   );
 }
 
@@ -1167,8 +1182,6 @@ function PlayerSelect({
 type EliminatorForm = {
   team1: string;
   team2: string;
-  team1_substitute: boolean;
-  team2_substitute: boolean;
   team1_player1_id: string;
   team1_player2_id: string;
   team2_player1_id: string;
@@ -1181,8 +1194,6 @@ type EliminatorForm = {
 const emptyEliminatorForm = (): EliminatorForm => ({
   team1: "",
   team2: "",
-  team1_substitute: false,
-  team2_substitute: false,
   team1_player1_id: "",
   team1_player2_id: "",
   team2_player1_id: "",
@@ -1240,8 +1251,7 @@ function EliminatorsPanel() {
   const playersOnTeam = (team: string) =>
     sortPlayers((players.data ?? []).filter((p) => p.team === team));
 
-  const playerOptions = (team: string, substitute: boolean) =>
-    substitute ? sortPlayers(players.data ?? []) : playersOnTeam(team);
+  const playerOptions = (team: string) => playersOnTeam(team);
 
   const submit = async () => {
     const err = validateEliminatorForm(form);
@@ -1287,7 +1297,6 @@ function EliminatorsPanel() {
                 onValueChange={(v) =>
                   set({
                     team1: v,
-                    team1_substitute: false,
                     team1_player1_id: "",
                     team1_player2_id: "",
                   })
@@ -1316,7 +1325,6 @@ function EliminatorsPanel() {
                 onValueChange={(v) =>
                   set({
                     team2: v,
-                    team2_substitute: false,
                     team2_player1_id: "",
                     team2_player2_id: "",
                   })
@@ -1340,27 +1348,17 @@ function EliminatorsPanel() {
 
           {form.team1 ? (
             <PairBlock label={`${form.team1} pair`}>
-              <SubstituteToggle
-                checked={form.team1_substitute}
-                onChange={(v) =>
-                  set({
-                    team1_substitute: v,
-                    team1_player1_id: "",
-                    team1_player2_id: "",
-                  })
-                }
-              />
               <PlayerSelect
                 value={form.team1_player1_id}
                 onChange={(v) => set({ team1_player1_id: v })}
-                players={playerOptions(form.team1, form.team1_substitute)}
+                players={playerOptions(form.team1)}
                 exclude={[form.team1_player2_id, form.team2_player1_id, form.team2_player2_id]}
                 playingTeam={form.team1}
               />
               <PlayerSelect
                 value={form.team1_player2_id}
                 onChange={(v) => set({ team1_player2_id: v })}
-                players={playerOptions(form.team1, form.team1_substitute)}
+                players={playerOptions(form.team1)}
                 exclude={[form.team1_player1_id, form.team2_player1_id, form.team2_player2_id]}
                 playingTeam={form.team1}
               />
@@ -1369,27 +1367,17 @@ function EliminatorsPanel() {
 
           {form.team2 ? (
             <PairBlock label={`${form.team2} pair`}>
-              <SubstituteToggle
-                checked={form.team2_substitute}
-                onChange={(v) =>
-                  set({
-                    team2_substitute: v,
-                    team2_player1_id: "",
-                    team2_player2_id: "",
-                  })
-                }
-              />
               <PlayerSelect
                 value={form.team2_player1_id}
                 onChange={(v) => set({ team2_player1_id: v })}
-                players={playerOptions(form.team2, form.team2_substitute)}
+                players={playerOptions(form.team2)}
                 exclude={[form.team1_player1_id, form.team1_player2_id, form.team2_player2_id]}
                 playingTeam={form.team2}
               />
               <PlayerSelect
                 value={form.team2_player2_id}
                 onChange={(v) => set({ team2_player2_id: v })}
-                players={playerOptions(form.team2, form.team2_substitute)}
+                players={playerOptions(form.team2)}
                 exclude={[form.team1_player1_id, form.team1_player2_id, form.team2_player1_id]}
                 playingTeam={form.team2}
               />
@@ -1680,12 +1668,6 @@ function MatchListPanel() {
     setForm({
       team1: t1,
       team2: t2,
-      team1_substitute: [m.team1_player1_id, m.team1_player2_id].some(
-        (id) => playerById.get(id)?.team !== t1,
-      ),
-      team2_substitute: [m.team2_player1_id, m.team2_player2_id].some(
-        (id) => playerById.get(id)?.team !== t2,
-      ),
       team1_player1_id: m.team1_player1_id,
       team1_player2_id: m.team1_player2_id,
       team2_player1_id: m.team2_player1_id,

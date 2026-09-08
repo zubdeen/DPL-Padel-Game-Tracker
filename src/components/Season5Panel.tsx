@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SectionCard } from "@/components/SectionCard";
@@ -23,6 +23,7 @@ import {
   normalizeSeason5Tier,
   selectSeason5SitOutPlayer,
   sortSeason5Players,
+  validateSeason5Lineup,
   validateSeason5Roster,
   type Season5LedgerEntry,
   type Season5LineupPlayer,
@@ -30,6 +31,31 @@ import {
 } from "@/lib/season5";
 
 const QUERY_STALE_MS = 1000 * 60 * 5;
+
+function getSaveErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    const details = "details" in error && typeof error.details === "string" ? ` ${error.details}` : "";
+    const hint = "hint" in error && typeof error.hint === "string" ? ` ${error.hint}` : "";
+    return `${error.message}${details}${hint}`;
+  }
+  return "Unable to save the night.";
+}
+
+function getNightlyTierOptions(officialTier: Season5Tier): Season5Tier[] {
+  switch (officialTier) {
+    case "M1":
+      return ["M1"];
+    case "M2":
+      return ["M2", "M1"];
+    case "Star":
+      return ["Star", "M2"];
+    case "Core":
+      return ["Core", "Star"];
+    case "Dev":
+      return ["Dev", "Core"];
+  }
+}
 
 type LineupNight = {
   id: string;
@@ -59,7 +85,8 @@ export function Season5Panel() {
   const [nightDate, setNightDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sitOutOverride, setSitOutOverride] = useState("");
   const [exceptionReason, setExceptionReason] = useState("");
-  const [busy, setBusy] = useState<"generate" | "lock" | "complete" | null>(null);
+  const [manualNightlyTiers, setManualNightlyTiers] = useState<Record<string, Season5Tier>>({});
+  const [busy, setBusy] = useState<"complete" | null>(null);
 
   const activeTeam = selectedTeam || teams[0] || "";
   const roster = useMemo(() => (players.data ?? []).filter((player) => player.team === activeTeam), [activeTeam, players.data]);
@@ -123,18 +150,56 @@ export function Season5Panel() {
     }
   }, [ledger.data, roster]);
   const selectedSitOutId = sitOutOverride || recommendedSitOut?.id || "";
+  useEffect(() => {
+    if (!selectedSitOutId || rosterIssues.length) {
+      setManualNightlyTiers({});
+      return;
+    }
+    try {
+      const source = lineupPlayers.data?.length
+        ? lineupPlayers.data
+        : generateSeason5Lineup(roster, selectedSitOutId).players;
+      const nextDraft = Object.fromEntries(
+        source
+          .filter((player) => player.lineup_status === "ACTIVE")
+          .map((player) => [player.player_id, player.nightly_playing_tier]),
+      ) as Record<string, Season5Tier>;
+      setManualNightlyTiers(nextDraft);
+    } catch {
+      setManualNightlyTiers({});
+    }
+  }, [lineupPlayers.data, roster, rosterIssues.length, selectedSitOutId]);
   const previewPlayers = useMemo(() => {
-    if (lineupPlayers.data?.length) return lineupPlayers.data;
     if (!selectedSitOutId || rosterIssues.length) return [];
     try {
-      return generateSeason5Lineup(roster, selectedSitOutId).players;
+      return generateSeason5Lineup(
+        roster,
+        selectedSitOutId,
+        new Map(Object.entries(manualNightlyTiers) as [string, Season5Tier][]),
+      ).players;
     } catch {
       return [];
     }
-  }, [lineupPlayers.data, roster, rosterIssues.length, selectedSitOutId]);
+  }, [manualNightlyTiers, roster, rosterIssues.length, selectedSitOutId]);
+  const rolePreviewPlayers = useMemo(() => {
+    if (!selectedSitOutId || rosterIssues.length) return [];
+    try {
+      const basePlayers = generateSeason5Lineup(roster, selectedSitOutId).players;
+      return basePlayers.map((player) => player.lineup_status === "ACTIVE"
+        ? { ...player, nightly_playing_tier: manualNightlyTiers[player.player_id] ?? player.nightly_playing_tier }
+        : player);
+    } catch {
+      return [];
+    }
+  }, [manualNightlyTiers, roster, rosterIssues.length, selectedSitOutId]);
   const selectedLedger = ledgerByPlayer.get(selectedSitOutId);
   const hasUnservedPlayer = roster.some((player) => (ledgerByPlayer.get(player.id)?.total_sit_outs ?? 0) === 0);
   const needsException = Boolean(selectedLedger && selectedLedger.total_sit_outs >= 2 && hasUnservedPlayer);
+  const activePreviewPlayers = rolePreviewPlayers.filter((player) => player.lineup_status === "ACTIVE");
+  const sitOutPreviewPlayer = rolePreviewPlayers.find((player) => player.lineup_status === "SIT_OUT");
+  const updateNightlyTier = (playerId: string, nightlyTier: Season5Tier) => {
+    setManualNightlyTiers((current) => ({ ...current, [playerId]: nightlyTier }));
+  };
 
   const refreshSeason5 = () => {
     void queryClient.invalidateQueries({ queryKey: ["season5_ledger", activeTeam] });
@@ -155,18 +220,26 @@ export function Season5Panel() {
     if (error) throw error;
   };
 
-  const generate = async () => {
+  const saveNight = async () => {
     if (!activeTeam) return toast.error("Choose a team first.");
     if (rosterIssues.length) return toast.error("Fix the roster structure before generating a lineup.");
-    if (night.data?.status === "LOCKED" || night.data?.status === "COMPLETED") return toast.error("This night is locked and cannot be regenerated.");
     if (!selectedSitOutId) return toast.error("Choose a sit-out player.");
     if (needsException && !exceptionReason.trim()) return toast.error("An authorized exception reason is required for a third sit-out.");
+    if (night.data?.status === "LOCKED" || night.data?.status === "COMPLETED") return toast.error("This night is already locked.");
 
-    setBusy("generate");
+    let lineupId = night.data?.id;
+    setBusy("complete");
     try {
+      const generated = generateSeason5Lineup(
+        roster,
+        selectedSitOutId,
+        new Map(Object.entries(manualNightlyTiers) as [string, Season5Tier][]),
+      );
+      const lineupIssues = validateSeason5Lineup(generated.players);
+      if (lineupIssues.length > 0) {
+        throw new Error(`Adjust Nightly Playing Roles before completing the night: ${lineupIssues.join(" ")}`);
+      }
       await ensureLedger();
-      const generated = generateSeason5Lineup(roster, selectedSitOutId);
-      let lineupId = night.data?.id;
       if (!lineupId) {
         const { data, error } = await supabase
           .from("season5_lineup_nights")
@@ -184,41 +257,20 @@ export function Season5Panel() {
         const { error: deleteError } = await supabase.from("season5_lineup_players").delete().eq("lineup_id", lineupId);
         if (deleteError) throw deleteError;
       }
+      if (!lineupId) throw new Error("Unable to create or load the lineup night.");
+      const finalLineupId = lineupId;
       const { error } = await supabase.from("season5_lineup_players").insert(
-        generated.players.map((player) => ({ ...player, lineup_id: lineupId })),
+        generated.players.map((player) => ({ ...player, lineup_id: finalLineupId })),
       );
       if (error) throw error;
-      toast.success("Season 5 lineup generated as a draft");
-      refreshSeason5();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to generate lineup.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const lock = async () => {
-    if (!night.data?.id || night.data.status !== "DRAFT") return toast.error("Generate a draft lineup first.");
-    setBusy("lock");
-    const { error } = await supabase.from("season5_lineup_nights").update({ status: "LOCKED" }).eq("id", night.data.id);
-    setBusy(null);
-    if (error) return toast.error(error.message);
-    toast.success("Lineup locked for the night");
-    refreshSeason5();
-  };
-
-  const complete = async () => {
-    if (!night.data?.id || night.data.status !== "LOCKED") return toast.error("Lock the lineup before completing the night.");
-    const sitOut = lineupPlayers.data?.find((player) => player.lineup_status === "SIT_OUT");
-    if (!sitOut) return toast.error("The saved lineup has no sit-out player.");
-    setBusy("complete");
-    try {
-      const { error } = await supabase.rpc("complete_season5_lineup", { target_lineup_id: night.data.id });
-      if (error) throw error;
+      const { error: lockError } = await supabase.from("season5_lineup_nights").update({ status: "LOCKED" }).eq("id", lineupId);
+      if (lockError) throw lockError;
+      const { error: completeError } = await supabase.rpc("complete_season5_lineup", { target_lineup_id: lineupId });
+      if (completeError) throw completeError;
       toast.success("Night completed and sit-out ledger updated");
       refreshSeason5();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to complete the night.");
+      toast.error(getSaveErrorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -234,7 +286,7 @@ export function Season5Panel() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Team</Label><Select value={activeTeam} onValueChange={(value) => { setSelectedTeam(value); setSitOutOverride(""); }}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose team" /></SelectTrigger><SelectContent>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Team</Label><Select value={activeTeam} onValueChange={(value) => { setSelectedTeam(value); setSitOutOverride(""); setManualNightlyTiers({}); }}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose team" /></SelectTrigger><SelectContent>{teams.map((team) => <SelectItem key={team} value={team}>{team}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">League night</Label><Input type="date" value={nightDate} onChange={(event) => setNightDate(event.target.value)} className="h-9 bg-background/40 text-[11px]" /></div>
           </div>
           {!activeTeam ? <p className="py-5 text-center text-[11px] text-muted-foreground">Add team assignments in the roster manager to begin.</p> : null}
@@ -256,16 +308,39 @@ export function Season5Panel() {
             <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Sit-out player</Label><Select value={selectedSitOutId} onValueChange={setSitOutOverride}><SelectTrigger className="h-9 bg-background/40 text-[11px]"><SelectValue placeholder="Choose sit-out" /></SelectTrigger><SelectContent>{sortSeason5Players(roster).map((player) => <SelectItem key={player.id} value={player.id}>{player.name} · {ledgerByPlayer.get(player.id)?.total_sit_outs ?? 0} sit-outs{player.id === recommendedSitOut?.id ? " · recommended" : ""}</SelectItem>)}</SelectContent></Select></div>
             {selectedSitOutId ? <p className="text-[10px] text-primary">Current priority: {priority.get(selectedSitOutId) ?? 1}</p> : null}
             {needsException ? <div className="space-y-1.5"><Label className="text-[9px] font-semibold uppercase tracking-wider text-amber-200">Authorized exception reason</Label><Textarea value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} placeholder="Explain why this player must receive a third sit-out before every rostered player has received one." className="min-h-20 bg-background/40 text-[10px]" /></div> : null}
+            {ledger.data?.length ? (
+              <div className="space-y-2 rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sit-out history</p>
+                <div className="space-y-1.5">
+                  {ledger.data.map((entry) => {
+                    const player = playerById.get(entry.player_id);
+                    return (
+                      <div key={entry.player_id} className="flex items-center justify-between gap-3 rounded-lg bg-black/10 px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] text-foreground">{player?.name ?? "Unknown player"}</p>
+                          <p className="truncate text-[9px] uppercase tracking-wider text-muted-foreground">
+                            Official {entry.official_tier} · Last sat {entry.previous_sit_out_night ? new Date(entry.previous_sit_out_night).toLocaleDateString() : "never"}
+                          </p>
+                        </div>
+                        <span className="text-[9px] text-primary">{entry.total_sit_outs} sit-outs</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
         </SectionCard>
 
         <SectionCard title="Nightly Playing Roles" icon={<CalendarDays className="h-4 w-4 text-primary" />}>
           <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{night.data ? `${night.data.status} · ${nightDate}` : "No lineup saved"}</p><p className="mt-1 text-[10px] text-muted-foreground">Drafts can be regenerated. Locked nights cannot be edited.</p></div>{night.data?.status === "LOCKED" || night.data?.status === "COMPLETED" ? <LockKeyhole className="h-4 w-4 text-amber-300" /> : null}</div>
-            <div className="space-y-2">{previewPlayers.length ? previewPlayers.map((lineupPlayer) => { const player = playerById.get(lineupPlayer.player_id); const isSitOut = lineupPlayer.lineup_status === "SIT_OUT"; return <div key={lineupPlayer.player_id} className={`flex items-center gap-2 rounded-lg p-2.5 ring-1 ${isSitOut ? "bg-amber-400/[0.08] ring-amber-400/20" : "bg-white/[0.02] ring-white/[0.05]"}`}><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-medium text-foreground">{player?.name ?? "Unknown player"}</p><p className="text-[9px] uppercase tracking-wider text-muted-foreground">Official {lineupPlayer.official_tier} · {isSitOut ? "SIT OUT" : `Nightly ${lineupPlayer.nightly_playing_tier}`}</p></div>{lineupPlayer.promotion_source_tier ? <span className="text-[9px] text-primary">{lineupPlayer.promotion_source_tier} → {lineupPlayer.nightly_playing_tier}</span> : <span className={`text-[9px] font-semibold uppercase ${isSitOut ? "text-amber-200" : "text-emerald-300"}`}>{isSitOut ? "SIT OUT" : "ACTIVE"}</span>}</div>; }) : <p className="rounded-xl border border-dashed border-white/[0.12] px-3 py-7 text-center text-[10px] text-muted-foreground">Generate a valid draft to preview the seven-player active structure.</p>}</div>
-            {previewPlayers.length ? <div className="grid grid-cols-5 gap-1.5">{SEASON5_TIERS.map((tier) => <div key={tier} className="rounded-lg bg-primary/[0.06] p-2 text-center ring-1 ring-primary/10"><p className="text-[9px] uppercase text-muted-foreground">{tier}</p><p className="text-[12px] font-bold text-foreground">{previewPlayers.filter((player) => player.lineup_status === "ACTIVE" && player.nightly_playing_tier === tier).length}<span className="text-[9px] text-muted-foreground">/{SEASON5_REQUIRED_ACTIVE[tier]}</span></p></div>)}</div> : null}
-            <Button className="w-full gap-2" onClick={generate} disabled={busy !== null || rosterIssues.length > 0 || !activeTeam}><RefreshCw className="h-4 w-4" /> {busy === "generate" ? "Generating…" : "Generate / regenerate draft"}</Button>
-            <div className="grid grid-cols-2 gap-2"><Button variant="secondary" className="gap-2" onClick={lock} disabled={busy !== null || night.data?.status !== "DRAFT"}><LockKeyhole className="h-4 w-4" /> Lock night</Button><Button variant="outline" className="gap-2" onClick={complete} disabled={busy !== null || night.data?.status !== "LOCKED"}><Check className="h-4 w-4" /> Complete night</Button></div>
+            <div className="flex items-center justify-between rounded-xl bg-white/[0.02] p-3 ring-1 ring-white/[0.05]"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{night.data ? `${night.data.status} · ${nightDate}` : "No lineup saved"}</p><p className="mt-1 text-[10px] text-muted-foreground">Adjust the active players and nightly tiers below, then complete the night to save changes.</p></div>{night.data?.status === "LOCKED" || night.data?.status === "COMPLETED" ? <LockKeyhole className="h-4 w-4 text-amber-300" /> : null}</div>
+            <div className="space-y-2">
+              {rolePreviewPlayers.length ? rolePreviewPlayers.map((lineupPlayer) => { const player = playerById.get(lineupPlayer.player_id); const isSitOut = lineupPlayer.lineup_status === "SIT_OUT"; const options = getNightlyTierOptions(lineupPlayer.official_tier); return <div key={lineupPlayer.player_id} className={`flex items-center gap-2 rounded-lg p-2.5 ring-1 ${isSitOut ? "bg-amber-400/[0.08] ring-amber-400/20" : "bg-white/[0.02] ring-white/[0.05]"}`}><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-medium text-foreground">{player?.name ?? "Unknown player"}</p><p className="text-[9px] uppercase tracking-wider text-muted-foreground">Current tier: {lineupPlayer.official_tier} · {isSitOut ? "SIT OUT" : `Nightly ${lineupPlayer.nightly_playing_tier}`}</p></div>{isSitOut ? <span className="text-[9px] font-semibold uppercase text-amber-200">SIT OUT</span> : <Select value={manualNightlyTiers[lineupPlayer.player_id] ?? lineupPlayer.nightly_playing_tier} onValueChange={(value) => updateNightlyTier(lineupPlayer.player_id, value as Season5Tier)}><SelectTrigger className="h-8 w-[150px] bg-background/40 text-[10px]"><SelectValue /></SelectTrigger><SelectContent>{options.map((tier) => <SelectItem key={tier} value={tier}>{player?.name ?? "Player"} · {tier}</SelectItem>)}</SelectContent></Select>}</div>; }) : <p className="rounded-xl border border-dashed border-white/[0.12] px-3 py-7 text-center text-[10px] text-muted-foreground">Pick a team and sit-out player to build the night&apos;s lineup.</p>}
+            </div>
+            {rolePreviewPlayers.length ? <div className="grid grid-cols-5 gap-1.5">{SEASON5_TIERS.map((tier) => <div key={tier} className="rounded-lg bg-primary/[0.06] p-2 text-center ring-1 ring-primary/10"><p className="text-[9px] uppercase text-muted-foreground">{tier}</p><p className="text-[12px] font-bold text-foreground">{activePreviewPlayers.filter((player) => player.nightly_playing_tier === tier).length}<span className="text-[9px] text-muted-foreground">/{SEASON5_REQUIRED_ACTIVE[tier]}</span></p></div>)}</div> : null}
+            {sitOutPreviewPlayer ? <p className="text-[10px] text-muted-foreground">Current sit-out preview: <span className="text-foreground">{playerById.get(sitOutPreviewPlayer.player_id)?.name ?? "Unknown"} · {sitOutPreviewPlayer.official_tier}</span></p> : null}
+            <Button className="w-full gap-2" onClick={saveNight} disabled={busy !== null || rosterIssues.length > 0 || !activeTeam || night.data?.status === "LOCKED" || night.data?.status === "COMPLETED"}><Check className="h-4 w-4" /> {busy === "complete" ? "Saving…" : "Complete night"}</Button>
           </div>
         </SectionCard>
       </> : null}

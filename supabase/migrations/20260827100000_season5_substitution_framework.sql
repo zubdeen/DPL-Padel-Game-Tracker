@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.season5_sit_out_ledger (
   official_tier text NOT NULL CHECK (official_tier IN ('M1', 'M2', 'Star', 'Core', 'Dev')),
   total_sit_outs integer NOT NULL DEFAULT 0 CHECK (total_sit_outs BETWEEN 0 AND 2),
   previous_sit_out_night timestamptz,
+  current_sit_out_priority integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team, player_id)
