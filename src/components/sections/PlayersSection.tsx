@@ -4,7 +4,11 @@ import { memo, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BarChart3, Crown, Search, TrendingUp, Users, X } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
-import { computePlayerStandings, type Match, type PlayerStanding } from "@/lib/scoring";
+import {
+  computePlayerStandings,
+  type Match,
+  type PlayerStanding,
+} from "@/lib/scoring";
 import type { EliminatorMatch } from "@/lib/eliminators";
 import { defaultSiteContent, getTeamLogo, useSiteContent, type SiteContent } from "@/lib/site-content";
 
@@ -24,12 +28,22 @@ const CATEGORY_COLORS: Record<string, string> = { M1: "from-yellow-500/15 to-tra
 function getInitials(name: string): string { return name.split(/[\s.]+/).map((part) => part[0]).join("").toUpperCase().slice(0, 2) || "?"; }
 function formatPoints(points: number): string { const rounded = Math.round(points * 10) / 10; return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1); }
 
-export const PlayersSection = memo(function PlayersSectionComponent({ players, matches, eliminatorMatches = [] }: Props) {
+export const PlayersSection = memo(function PlayersSectionComponent({
+  players,
+  matches,
+  eliminatorMatches = [],
+}: Props) {
   const { data: configuredContent } = useSiteContent();
   const content = configuredContent ?? defaultSiteContent;
   const router = useRouter();
-  const standings = useMemo(() => computePlayerStandings(players, matches, eliminatorMatches), [players, matches, eliminatorMatches]);
-  const leagueStandings = useMemo(() => computePlayerStandings(players, matches), [players, matches]);
+  const standings = useMemo(
+    () => computePlayerStandings(players, matches, eliminatorMatches),
+    [players, matches, eliminatorMatches],
+  );
+  const leagueStandings = useMemo(
+    () => computePlayerStandings(players, matches),
+    [players, matches],
+  );
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);

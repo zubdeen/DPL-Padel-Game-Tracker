@@ -153,6 +153,37 @@ assertEq(
   4,
 );
 
+const tieredPlayers: Player[] = [
+  { id: "tier-m1", name: "Official M1", category: "M1" },
+  { id: "tier-star", name: "Official Star", category: "Star" },
+  { id: "tier-core", name: "Official Core", category: "Core" },
+  { id: "tier-dev", name: "Official Dev", category: "Dev" },
+];
+const tieredMatch: Match = {
+  id: "tiered-match",
+  team1_player1_id: "tier-m1",
+  team1_player2_id: "tier-star",
+  team2_player1_id: "tier-core",
+  team2_player2_id: "tier-dev",
+  team1_games: 6,
+  team2_games: 4,
+  tie_breaker: false,
+  played_at: "2025-02-15T00:00:00Z",
+};
+const officialTierStandings = computePlayerStandings(tieredPlayers, [tieredMatch]);
+// Raw difference is +2. Official handicaps are M1 + Star = 6 versus Core + Dev = 1,
+// so the active pair receives -3, regardless of any nightly promotion.
+assertEq(
+  "League scores use official player tiers",
+  officialTierStandings.find((s) => s.player.id === "tier-m1")!.points,
+  -3,
+);
+assertEq(
+  "Opposing league scores use official player tiers",
+  officialTierStandings.find((s) => s.player.id === "tier-core")!.points,
+  3,
+);
+
 const substitutionMatches: Match[] = [
   {
     id: "s1",
@@ -201,6 +232,12 @@ const combinedStandings = computePlayerStandings(eliminatorPlayers, [], [elimina
 assertEq(
   "Eliminators feed overall player standings",
   combinedStandings.find((s) => s.player.id === "m1")!.points,
+  -3,
+);
+const leagueEquivalentStandings = computePlayerStandings(eliminatorPlayers, [eliminatorMatch]);
+assertEq(
+  "League and eliminator individual scoring share the same calculation",
+  leagueEquivalentStandings.find((s) => s.player.id === "m1")!.points,
   -3,
 );
 

@@ -6,10 +6,16 @@
 //   - If the match went to tiebreak: winner gets 2, loser gets 1.
 //
 // Player points (per match):
-//   - Each player on a team gets (team_games_for − team_games_against).
-//   - Total = sum across all the player's matches / Number of games played.
+//   - Each team gets the raw game difference adjusted by the opponent pair's
+//     handicap minus its own pair's handicap.
+//   - Both league and eliminator matches use the player's official tier.
+//   - Total = sum across all the player's matches / Number of matches played.
 
-import { adjustedEliminatorDiffs, type EliminatorMatch } from "@/lib/eliminators";
+import {
+  adjustedPlayerDiffs,
+  adjustedEliminatorDiffs,
+  type EliminatorMatch,
+} from "@/lib/eliminators";
 
 export type PlayerCategory = "M1" | "M2" | "Star" | "Core" | "Dev";
 
@@ -97,27 +103,32 @@ export function computePlayerStandings(
   };
 
   for (const m of matches) {
-    const diff = m.team1_games - m.team2_games;
+    const rawDiff = m.team1_games - m.team2_games;
     const t1 = [m.team1_player1_id, m.team1_player2_id];
     const t2 = [m.team2_player1_id, m.team2_player2_id];
+    const allPlayerIds = [...t1, ...t2];
+    const tierByPlayerId = new Map(
+      allPlayerIds.map((pid) => [pid, byId.get(pid)?.category ?? "Dev"]),
+    );
+    const { team1Diff, team2Diff } = adjustedPlayerDiffs(m, tierByPlayerId);
 
     for (const pid of t1) {
       const s = ensure(pid);
       s.matches += 1;
-      s.points += diff;
+      s.points += team1Diff;
       s.gamesFor += m.team1_games;
       s.gamesAgainst += m.team2_games;
-      if (diff > 0) s.wins += 1;
-      else if (diff < 0) s.losses += 1;
+      if (rawDiff > 0) s.wins += 1;
+      else if (rawDiff < 0) s.losses += 1;
     }
     for (const pid of t2) {
       const s = ensure(pid);
       s.matches += 1;
-      s.points += -diff;
+      s.points += team2Diff;
       s.gamesFor += m.team2_games;
       s.gamesAgainst += m.team1_games;
-      if (-diff > 0) s.wins += 1;
-      else if (-diff < 0) s.losses += 1;
+      if (-rawDiff > 0) s.wins += 1;
+      else if (-rawDiff < 0) s.losses += 1;
     }
   }
 

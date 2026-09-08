@@ -35,19 +35,36 @@ export const ELIMINATOR_CATEGORY_HANDICAP: Record<string, number> = {
   dev: 0,
 };
 
-function playerHandicap(player?: Player): number {
-  return ELIMINATOR_CATEGORY_HANDICAP[String(player?.category ?? "Dev")] ?? 0;
+type IndividualPointMatch = Pick<
+  EliminatorMatch,
+  | "team1_player1_id"
+  | "team1_player2_id"
+  | "team2_player1_id"
+  | "team2_player2_id"
+  | "team1_games"
+  | "team2_games"
+>;
+
+function tierHandicap(tier?: string | null): number {
+  return ELIMINATOR_CATEGORY_HANDICAP[String(tier ?? "Dev")] ?? 0;
 }
 
-function pairHandicap(playerById: Map<string, Player>, playerIds: string[]) {
-  return playerIds.reduce((total, playerId) => total + playerHandicap(playerById.get(playerId)), 0);
+function pairHandicap(tierByPlayerId: ReadonlyMap<string, string | null | undefined>, playerIds: string[]) {
+  return playerIds.reduce((total, playerId) => total + tierHandicap(tierByPlayerId.get(playerId)), 0);
 }
 
-export function adjustedEliminatorDiffs(match: EliminatorMatch, playerById: Map<string, Player>) {
+/**
+ * Apply the shared individual-player handicap calculation.
+ * Both league and eliminator matches pass the player's official tier.
+ */
+export function adjustedPlayerDiffs(
+  match: IndividualPointMatch,
+  tierByPlayerId: ReadonlyMap<string, string | null | undefined>,
+) {
   const team1Ids = [match.team1_player1_id, match.team1_player2_id];
   const team2Ids = [match.team2_player1_id, match.team2_player2_id];
-  const team1Handicap = pairHandicap(playerById, team1Ids);
-  const team2Handicap = pairHandicap(playerById, team2Ids);
+  const team1Handicap = pairHandicap(tierByPlayerId, team1Ids);
+  const team2Handicap = pairHandicap(tierByPlayerId, team2Ids);
   const rawTeam1Diff = match.team1_games - match.team2_games;
   const handicapAdjustment = team2Handicap - team1Handicap;
 
@@ -58,6 +75,15 @@ export function adjustedEliminatorDiffs(match: EliminatorMatch, playerById: Map<
     team2Handicap,
     fixtureDifficulty: Math.abs(team1Handicap - team2Handicap),
   };
+}
+
+export function adjustedEliminatorDiffs(match: EliminatorMatch, playerById: Map<string, Player>) {
+  return adjustedPlayerDiffs(
+    match,
+    new Map(
+      [...playerById.entries()].map(([playerId, player]) => [playerId, player.category ?? "Dev"]),
+    ),
+  );
 }
 
 export function computeEliminatorStandings(

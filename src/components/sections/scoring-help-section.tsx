@@ -36,9 +36,9 @@ export function ScoringHelpSection() {
             icon={<Users className="h-3.5 w-3.5 text-primary" />}
             title="Player Rankings"
           >
-            <p>Players earn their game difference from every match they play.</p>
+            <p>Players earn the official-tier-adjusted game difference from every match they play.</p>
             <p>The ranking score is the player&apos;s average points per match.</p>
-            <Example text="Example: a 6-4 win is +2 for both winning players and -2 for both losing players divided by the number of matches they played. Game Difference / Number of Matches Played" />
+            <Example text="Example: the raw 6–4 difference is adjusted by the two pairs&apos; official tiers, then divided by the number of matches played. A temporary nightly promotion does not change the individual score tier." />
           </ScoringBlock>
 
           <ScoringBlock
