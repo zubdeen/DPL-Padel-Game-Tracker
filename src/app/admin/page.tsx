@@ -865,6 +865,8 @@ function validateForm(f: MatchForm): string | null {
   const g2 = parseInt(f.team2_games, 10);
   if (!Number.isFinite(g1) || !Number.isFinite(g2) || g1 < 0 || g2 < 0)
     return "Enter valid game scores.";
+  if (g1 > 5 || g2 > 5) return "Scores must be first to 5.";
+  if (Math.max(g1, g2) !== 5) return "The winning team must have 5 games.";
   if (g1 === g2) return "Game scores can't be tied.";
   if (!f.played_at) return "Pick a date.";
   return null;
@@ -1214,6 +1216,8 @@ function validateEliminatorForm(f: EliminatorForm): string | null {
   if (!Number.isFinite(g1) || !Number.isFinite(g2) || g1 < 0 || g2 < 0) {
     return "Enter valid game scores.";
   }
+  if (g1 > 5 || g2 > 5) return "Scores must be first to 5.";
+  if (Math.max(g1, g2) !== 5) return "The winning team must have 5 games.";
   if (g1 === g2) return "Game scores can't be tied.";
   if (!f.played_at) return "Pick a date.";
   return null;

@@ -2,7 +2,7 @@
 //
 // Team points (per match):
 //   - Winner gets 3 points; loser gets 0.
-//   - Bonus: if the winner wins 6–0, winner gets 4 instead of 3 (loser still 0).
+//   - Bonus: if the winner wins 5–0, winner gets 4 instead of 3 (loser still 0).
 //   - If the match went to tiebreak: winner gets 2, loser gets 1.
 //
 // Player points (per match):
@@ -72,7 +72,7 @@ export function teamPointsFor(
   tie_breaker: boolean,
 ): [number, number] {
   if (tie_breaker) return [2, 1];
-  if (winnerGames >= 6 && loserGames === 0) return [4, 0];
+  if (winnerGames === 5 && loserGames === 0) return [4, 0];
   return [3, 0];
 }
 

@@ -140,10 +140,9 @@ const rulesData: RuleSection[] = [
     title: "5. Match Format & Timing",
     bullets: [
       "Each official DPL match consists of 1 set",
-      "Each set consists of 6 games",
+      "Each set is first to 5 games",
       "Deuce uses sudden-death \"Star Point\"",
-      "A team must win by 2 games",
-      "At 6-6, a 7-point tiebreak is played"
+      "At 4-4, a tiebreak determines the winner"
     ],
     subsections: [
       {
@@ -194,11 +193,11 @@ const rulesData: RuleSection[] = [
       {
         label: "Points Allocation",
         items: [
-          "Set Win = 3 points (including 7-5 wins)",
+          "Set Win = 3 points (including 5-1, 5-2, and 5-3 wins)",
           "Tiebreak Win = 2 points",
           "Tiebreak Loss = 1 point",
           "Normal Loss = 0 points",
-          "Winning a set 6-0 awards +1 bonus point"
+          "Winning a set 5-0 awards +1 bonus point"
         ]
       }
     ]
@@ -220,8 +219,8 @@ const rulesData: RuleSection[] = [
       {
         label: "Examples",
         items: [
-          "Winning 6-2 = +4 GD",
-          "Losing 4-6 = -2 GD"
+          "Winning 5-2 = +3 GD",
+          "Losing 2-5 = -3 GD"
         ]
       },
       {

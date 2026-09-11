@@ -27,9 +27,9 @@ export function ScoringHelpSection() {
             title="League Team Points"
           >
             <p>Normal win: winner gets 3 points.</p>
-            <p>6-0 win: winner gets 4 points.</p>
+            <p>5-0 win: winner gets 4 points.</p>
             <p>Tiebreak match: winner gets 2, loser gets 1.</p>
-            <Example text="Example: Team A wins 6-4, so Team A gets 3 points and Team B gets 0." />
+            <Example text="Example: Team A wins 5-3, so Team A gets 3 points and Team B gets 0." />
           </ScoringBlock>
 
           <ScoringBlock
@@ -38,7 +38,7 @@ export function ScoringHelpSection() {
           >
             <p>Players earn the official-tier-adjusted game difference from every match they play.</p>
             <p>The ranking score is the player&apos;s average points per match.</p>
-            <Example text="Example: the raw 6–4 difference is adjusted by the two pairs&apos; official tiers, then divided by the number of matches played. A temporary nightly promotion does not change the individual score tier." />
+            <Example text="Example: the raw 5–3 difference is adjusted by the two pairs&apos; official tiers, then divided by the number of matches played. A temporary nightly promotion does not change the individual score tier." />
           </ScoringBlock>
 
           <ScoringBlock
@@ -60,8 +60,8 @@ export function ScoringHelpSection() {
               ))}
             </div>
             <Example text="M1 + M2 has handicap 7. Star + Dev has handicap 2. The difference between the two is the fixture difficulty of 5." />
-            <Example text="If M1 + M2 win 6-4, raw difference is +2, then 2 - 5 = -3 each." />
-            <Example text="If Star + Dev win 6-3, raw difference is +3, then 3 + 5 = +8 each." />
+            <Example text="If M1 + M2 win 5-3, raw difference is +2, then 2 - 5 = -3 each." />
+            <Example text="If Star + Dev win 5-2, raw difference is +3, then 3 + 5 = +8 each." />
           </ScoringBlock>
         </div>
       </SectionCard>
