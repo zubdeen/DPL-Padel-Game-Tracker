@@ -23,7 +23,9 @@ import {
 import { toast } from "sonner";
 import {
   fetchMatches,
+  isMissingMatchForfeitColumn,
   isMissingMatchTeamNameColumn,
+  withoutMatchForfeit,
   withoutMatchTeamNames,
 } from "@/lib/match-data";
 import { fetchEliminatorMatches } from "@/lib/eliminator-data";
@@ -839,6 +841,7 @@ type MatchForm = {
   team1_games: string;
   team2_games: string;
   tie_breaker: boolean;
+  forfeited: boolean;
   played_at: string;
 };
 
@@ -852,6 +855,7 @@ const emptyForm = (): MatchForm => ({
   team1_games: "",
   team2_games: "",
   tie_breaker: false,
+  forfeited: false,
   played_at: new Date().toISOString().slice(0, 10),
 });
 
@@ -868,6 +872,8 @@ function validateForm(f: MatchForm): string | null {
   if (g1 > 5 || g2 > 5) return "Scores must be first to 5.";
   if (Math.max(g1, g2) !== 5) return "The winning team must have 5 games.";
   if (g1 === g2) return "Game scores can't be tied.";
+  if (f.tie_breaker && f.forfeited) return "A match cannot be both a tiebreak and a forfeit.";
+  if (f.forfeited && !((g1 === 5 && g2 === 0) || (g1 === 0 && g2 === 5))) return "A forfeit must be recorded as 5-0.";
   if (!f.played_at) return "Pick a date.";
   return null;
 }
@@ -901,20 +907,33 @@ function MatchEntryPanel() {
       team1_games: parseInt(form.team1_games, 10),
       team2_games: parseInt(form.team2_games, 10),
       tie_breaker: form.tie_breaker,
+      forfeited: form.forfeited,
       played_at: new Date(form.played_at).toISOString(),
     };
     let { error } = await supabase.from("matches").insert(payload as never);
     const savedWithoutTeamNames = isMissingMatchTeamNameColumn(error);
+    const savedWithoutForfeit = isMissingMatchForfeitColumn(error);
 
-    if (savedWithoutTeamNames) {
-      const legacy = await supabase.from("matches").insert(withoutMatchTeamNames(payload) as never);
+    if (savedWithoutTeamNames || savedWithoutForfeit) {
+      const withoutOptionalColumns = savedWithoutTeamNames
+        ? withoutMatchTeamNames(payload)
+        : payload;
+      const retryPayload = savedWithoutForfeit
+        ? withoutMatchForfeit(withoutOptionalColumns)
+        : withoutOptionalColumns;
+      const legacy = await supabase.from("matches").insert(retryPayload as never);
+      error = legacy.error;
+    }
+
+    if (error && (isMissingMatchTeamNameColumn(error) || isMissingMatchForfeitColumn(error))) {
+      const legacy = await supabase.from("matches").insert(withoutMatchForfeit(withoutMatchTeamNames(payload)) as never);
       error = legacy.error;
     }
 
     if (error) return toast.error(error.message);
     toast.success(
-      savedWithoutTeamNames
-        ? "Match recorded. Apply the substitution migration to save playing team names."
+      savedWithoutTeamNames || savedWithoutForfeit
+        ? `Match recorded. Apply ${savedWithoutTeamNames ? "the substitution" : "the forfeit"} migration to save all match metadata.`
         : "Match recorded",
     );
     setForm(emptyForm());
@@ -1093,13 +1112,24 @@ function MatchFormFields({
         />
       </div>
 
-      <label className="flex items-center gap-2 rounded-xl bg-white/[0.02] ring-1 ring-white/[0.05] px-3 py-2 cursor-pointer">
-        <Checkbox
-          checked={form.tie_breaker}
-          onCheckedChange={(v) => set({ tie_breaker: v === true })}
-        />
-        <span className="text-[11px] text-foreground">Match went to a tiebreak</span>
-      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex items-center gap-2 rounded-xl bg-white/[0.02] ring-1 ring-white/[0.05] px-3 py-2 cursor-pointer">
+          <Checkbox
+            checked={form.tie_breaker}
+            onCheckedChange={(v) => set({ tie_breaker: v === true, forfeited: v === true ? false : form.forfeited })}
+          />
+          <span className="text-[11px] text-foreground">Tiebreak</span>
+        </label>
+
+        <label className="flex items-center gap-2 rounded-xl bg-amber-400/[0.05] ring-1 ring-amber-400/15 px-3 py-2 cursor-pointer">
+          <Checkbox
+            checked={form.forfeited}
+            onCheckedChange={(v) => set({ forfeited: v === true, tie_breaker: v === true ? false : form.tie_breaker })}
+          />
+          <span className="text-[11px] text-foreground">Forfeit</span>
+        </label>
+      </div>
+      <p className="text-[9px] leading-relaxed text-muted-foreground">Forfeit records a 5–0 team result for 4–0 points; player scores are not changed.</p>
 
       <div className="space-y-1.5">
         <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1679,6 +1709,7 @@ function MatchListPanel() {
       team1_games: String(m.team1_games),
       team2_games: String(m.team2_games),
       tie_breaker: !!m.tie_breaker,
+      forfeited: !!m.forfeited,
       played_at: new Date(m.played_at).toISOString().slice(0, 10),
     });
   };
@@ -1698,6 +1729,7 @@ function MatchListPanel() {
       team1_games: parseInt(form.team1_games, 10),
       team2_games: parseInt(form.team2_games, 10),
       tie_breaker: form.tie_breaker,
+      forfeited: form.forfeited,
       played_at: new Date(form.played_at).toISOString(),
     };
     let { error } = await supabase
@@ -1705,19 +1737,34 @@ function MatchListPanel() {
       .update(payload as never)
       .eq("id", editing);
     const savedWithoutTeamNames = isMissingMatchTeamNameColumn(error);
+    const savedWithoutForfeit = isMissingMatchForfeitColumn(error);
 
-    if (savedWithoutTeamNames) {
+    if (savedWithoutTeamNames || savedWithoutForfeit) {
+      const withoutOptionalColumns = savedWithoutTeamNames
+        ? withoutMatchTeamNames(payload)
+        : payload;
+      const retryPayload = savedWithoutForfeit
+        ? withoutMatchForfeit(withoutOptionalColumns)
+        : withoutOptionalColumns;
       const legacy = await supabase
         .from("matches")
-        .update(withoutMatchTeamNames(payload) as never)
+        .update(retryPayload as never)
+        .eq("id", editing);
+      error = legacy.error;
+    }
+
+    if (error && (isMissingMatchTeamNameColumn(error) || isMissingMatchForfeitColumn(error))) {
+      const legacy = await supabase
+        .from("matches")
+        .update(withoutMatchForfeit(withoutMatchTeamNames(payload)) as never)
         .eq("id", editing);
       error = legacy.error;
     }
 
     if (error) return toast.error(error.message);
     toast.success(
-      savedWithoutTeamNames
-        ? "Match updated. Apply the substitution migration to save playing team names."
+      savedWithoutTeamNames || savedWithoutForfeit
+        ? `Match updated. Apply ${savedWithoutTeamNames ? "the substitution" : "the forfeit"} migration to save all match metadata.`
         : "Match updated",
     );
     setEditing(null);
@@ -1775,7 +1822,9 @@ function MatchListPanel() {
                               {playerById.get(m.team2_player1_id)?.name} &amp;{" "}
                               {playerById.get(m.team2_player2_id)?.name}
                             </span>
-                            {m.tie_breaker ? (
+                            {m.forfeited ? (
+                              <span className="ml-1 text-[8px] text-amber-300">FORFEIT · TEAM ONLY</span>
+                            ) : m.tie_breaker ? (
                               <span className="ml-1 text-[8px] text-muted-foreground">TB</span>
                             ) : null}
                           </div>

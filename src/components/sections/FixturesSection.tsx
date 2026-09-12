@@ -129,7 +129,7 @@ export const FixturesSection = memo(function FixturesSectionComponent({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[9px] font-semibold uppercase tracking-wider text-primary/70">
-                            {m.tie_breaker ? "Tiebreak" : "Final"}
+                            {m.forfeited ? "Forfeit · Team points only" : m.tie_breaker ? "Tiebreak" : "Final"}
                           </span>
                         </div>
 

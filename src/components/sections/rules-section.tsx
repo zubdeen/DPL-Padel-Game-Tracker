@@ -197,7 +197,8 @@ const rulesData: RuleSection[] = [
           "Tiebreak Win = 2 points",
           "Tiebreak Loss = 1 point",
           "Normal Loss = 0 points",
-          "Winning a set 5-0 awards +1 bonus point"
+          "Winning a set 5-0 awards +1 bonus point",
+          "Forfeits count for team points only; no individual player statistics are recorded"
         ]
       }
     ]

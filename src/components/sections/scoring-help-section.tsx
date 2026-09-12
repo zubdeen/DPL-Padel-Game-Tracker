@@ -28,6 +28,7 @@ export function ScoringHelpSection() {
           >
             <p>Normal win: winner gets 3 points.</p>
             <p>5-0 win: winner gets 4 points.</p>
+            <p>Forfeit: recorded as a 5-0 team result for 4 points; player ratings are unchanged.</p>
             <p>Tiebreak match: winner gets 2, loser gets 1.</p>
             <Example text="Example: Team A wins 5-3, so Team A gets 3 points and Team B gets 0." />
           </ScoringBlock>

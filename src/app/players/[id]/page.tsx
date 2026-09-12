@@ -33,6 +33,7 @@ function getBestPartnership(playerId: string, matches: Match[], players: Player[
   const partnerships = new Map<string, { matches: number; wins: number }>();
 
   for (const match of matches) {
+    if (match.forfeited) continue;
     const side = getMatchSide(match, playerId);
     if (!side) continue;
     const teammates = side === 1 ? [match.team1_player1_id, match.team1_player2_id] : [match.team2_player1_id, match.team2_player2_id];
@@ -52,7 +53,7 @@ function getBestPartnership(playerId: string, matches: Match[], players: Player[
 function getLongestWinningStreak(playerId: string, matches: Match[]) {
   let current = 0;
   let longest = 0;
-  for (const match of [...matches].filter((candidate) => getMatchSide(candidate, playerId)).sort((a, b) => a.played_at.localeCompare(b.played_at))) {
+  for (const match of [...matches].filter((candidate) => !candidate.forfeited && getMatchSide(candidate, playerId)).sort((a, b) => a.played_at.localeCompare(b.played_at))) {
     const side = getMatchSide(match, playerId);
     const won = side === 1 ? match.team1_games > match.team2_games : match.team2_games > match.team1_games;
     current = won ? current + 1 : 0;
@@ -77,7 +78,7 @@ export default function PlayerDetailsPage() {
     const position = tierStandings.findIndex((standing) => standing.player.id === playerId);
     return position >= 0 ? position + 1 : null;
   }, [eliminatorMatches.data, matches.data, player, playerId, players.data]);
-  const playerMatches = useMemo(() => (matches.data ?? []).filter((match) => [match.team1_player1_id, match.team1_player2_id, match.team2_player1_id, match.team2_player2_id].includes(playerId)).sort((a, b) => b.played_at.localeCompare(a.played_at)).slice(0, 12), [matches.data, playerId]);
+  const playerMatches = useMemo(() => (matches.data ?? []).filter((match) => !match.forfeited && [match.team1_player1_id, match.team1_player2_id, match.team2_player1_id, match.team2_player2_id].includes(playerId)).sort((a, b) => b.played_at.localeCompare(a.played_at)).slice(0, 12), [matches.data, playerId]);
   const site = content ?? defaultSiteContent;
   const teamLogo = player?.team ? getTeamLogo(site, player.team) : "";
   const isLoading = players.isLoading || matches.isLoading || eliminatorMatches.isLoading;

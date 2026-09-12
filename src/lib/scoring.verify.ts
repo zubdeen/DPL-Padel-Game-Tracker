@@ -249,3 +249,24 @@ assertEq(
   eliminatorStandings.find((s) => s.playerId === "star")!.gameDiff,
   3,
 );
+
+const forfeitedMatch: Match = {
+  id: "forfeit-1",
+  team1_name: "T1",
+  team2_name: "T2",
+  team1_player1_id: "p1",
+  team1_player2_id: "p2",
+  team2_player1_id: "p3",
+  team2_player2_id: "p4",
+  team1_games: 5,
+  team2_games: 0,
+  tie_breaker: false,
+  forfeited: true,
+  played_at: "2025-04-01T00:00:00Z",
+};
+const forfeitTeamStandings = computeTeamStandings(players, [forfeitedMatch]);
+assertEq("Forfeit winner gets team points", forfeitTeamStandings.find((s) => s.team === "T1")!.points, 4);
+assertEq("Forfeit loser gets no team points", forfeitTeamStandings.find((s) => s.team === "T2")!.points, 0);
+const forfeitPlayerStandings = computePlayerStandings(players, [forfeitedMatch]);
+assertEq("Forfeit does not count for player matches", forfeitPlayerStandings.find((s) => s.player.id === "p1")!.matches, 0);
+assertEq("Forfeit does not change player rating", forfeitPlayerStandings.find((s) => s.player.id === "p1")!.points, 0);

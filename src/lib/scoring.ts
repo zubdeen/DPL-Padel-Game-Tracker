@@ -4,6 +4,7 @@
 //   - Winner gets 3 points; loser gets 0.
 //   - Bonus: if the winner wins 5–0, winner gets 4 instead of 3 (loser still 0).
 //   - If the match went to tiebreak: winner gets 2, loser gets 1.
+//   - A forfeit is a team-only 5–0 result: winner gets 4, loser gets 0.
 //
 // Player points (per match):
 //   - Each team gets the raw game difference adjusted by the opponent pair's
@@ -40,6 +41,7 @@ export type Match = {
   team1_games: number;
   team2_games: number;
   tie_breaker?: boolean | null;
+  forfeited?: boolean | null;
   played_at: string;
 };
 
@@ -70,7 +72,9 @@ export function teamPointsFor(
   winnerGames: number,
   loserGames: number,
   tie_breaker: boolean,
+  forfeited = false,
 ): [number, number] {
+  if (forfeited) return [4, 0];
   if (tie_breaker) return [2, 1];
   if (winnerGames === 5 && loserGames === 0) return [4, 0];
   return [3, 0];
@@ -103,6 +107,7 @@ export function computePlayerStandings(
   };
 
   for (const m of matches) {
+    if (m.forfeited) continue;
     const rawDiff = m.team1_games - m.team2_games;
     const t1 = [m.team1_player1_id, m.team1_player2_id];
     const t2 = [m.team2_player1_id, m.team2_player2_id];
@@ -199,13 +204,13 @@ export function computeTeamStandings(players: Player[], matches: Match[]): TeamS
 
     const tb = !!m.tie_breaker;
     if (diff > 0) {
-      const [wp, lp] = teamPointsFor(m.team1_games, m.team2_games, tb);
+      const [wp, lp] = teamPointsFor(m.team1_games, m.team2_games, tb, !!m.forfeited);
       t1.points += wp;
       t2.points += lp;
       t1.wins += 1;
       t2.losses += 1;
     } else if (diff < 0) {
-      const [wp, lp] = teamPointsFor(m.team2_games, m.team1_games, tb);
+      const [wp, lp] = teamPointsFor(m.team2_games, m.team1_games, tb, !!m.forfeited);
       t2.points += wp;
       t1.points += lp;
       t2.wins += 1;
