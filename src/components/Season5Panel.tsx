@@ -207,19 +207,6 @@ export function Season5Panel() {
     void queryClient.invalidateQueries({ queryKey: ["season5_lineup_players"] });
   };
 
-  const ensureLedger = async () => {
-    const rows = roster.map((player) => ({
-      team: activeTeam,
-      player_id: player.id,
-      official_tier: normalizeSeason5Tier(player.category) ?? "Dev",
-      total_sit_outs: ledgerByPlayer.get(player.id)?.total_sit_outs ?? 0,
-      previous_sit_out_night: ledgerByPlayer.get(player.id)?.previous_sit_out_night ?? null,
-      current_sit_out_priority: priority.get(player.id) ?? 1,
-    }));
-    const { error } = await supabase.from("season5_sit_out_ledger").upsert(rows as never, { onConflict: "team,player_id" });
-    if (error) throw error;
-  };
-
   const saveNight = async () => {
     if (!activeTeam) return toast.error("Choose a team first.");
     if (rosterIssues.length) return toast.error("Fix the roster structure before generating a lineup.");
@@ -239,18 +226,33 @@ export function Season5Panel() {
       if (lineupIssues.length > 0) {
         throw new Error(`Adjust Nightly Playing Roles before completing the night: ${lineupIssues.join(" ")}`);
       }
-      await ensureLedger();
       if (!lineupId) {
         const { data, error } = await supabase
           .from("season5_lineup_nights")
-          .upsert(
-            { team: activeTeam, night_date: nightDate, status: "DRAFT", exception_reason: exceptionReason.trim() || null },
-            { onConflict: "team,night_date" },
-          )
+          .insert({ team: activeTeam, night_date: nightDate, status: "DRAFT", exception_reason: exceptionReason.trim() || null })
           .select("id")
           .single();
-        if (error) throw error;
-        lineupId = data.id;
+        if (!error) {
+          lineupId = data.id;
+        } else if (error.code === "23505") {
+          const { data: existing, error: existingError } = await supabase
+            .from("season5_lineup_nights")
+            .select("id, status")
+            .eq("team", activeTeam)
+            .eq("night_date", nightDate)
+            .maybeSingle();
+          if (existingError) throw existingError;
+          if (!existing) throw error;
+          if (existing.status !== "DRAFT") throw new Error("This night is already locked or completed.");
+          lineupId = existing.id;
+          const { error: updateError } = await supabase
+            .from("season5_lineup_nights")
+            .update({ exception_reason: exceptionReason.trim() || null })
+            .eq("id", lineupId);
+          if (updateError) throw updateError;
+        } else {
+          throw error;
+        }
       } else {
         const { error } = await supabase
           .from("season5_lineup_nights")
