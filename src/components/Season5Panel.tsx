@@ -243,7 +243,10 @@ export function Season5Panel() {
       if (!lineupId) {
         const { data, error } = await supabase
           .from("season5_lineup_nights")
-          .insert({ team: activeTeam, night_date: nightDate, status: "DRAFT", exception_reason: exceptionReason.trim() || null })
+          .upsert(
+            { team: activeTeam, night_date: nightDate, status: "DRAFT", exception_reason: exceptionReason.trim() || null },
+            { onConflict: "team,night_date" },
+          )
           .select("id")
           .single();
         if (error) throw error;
@@ -254,11 +257,11 @@ export function Season5Panel() {
           .update({ status: "DRAFT", exception_reason: exceptionReason.trim() || null })
           .eq("id", lineupId);
         if (error) throw error;
-        const { error: deleteError } = await supabase.from("season5_lineup_players").delete().eq("lineup_id", lineupId);
-        if (deleteError) throw deleteError;
       }
       if (!lineupId) throw new Error("Unable to create or load the lineup night.");
       const finalLineupId = lineupId;
+      const { error: deleteError } = await supabase.from("season5_lineup_players").delete().eq("lineup_id", finalLineupId);
+      if (deleteError) throw deleteError;
       const { error } = await supabase.from("season5_lineup_players").insert(
         generated.players.map((player) => ({ ...player, lineup_id: finalLineupId })),
       );
