@@ -35,6 +35,17 @@ export const ELIMINATOR_CATEGORY_HANDICAP: Record<string, number> = {
   dev: 0,
 };
 
+const NORMALIZED_CATEGORY_HANDICAP: Record<string, number> = {
+  m1: 4,
+  m2: 3,
+  star: 2,
+  stars: 2,
+  core: 1,
+  cores: 1,
+  dev: 0,
+  developing: 0,
+};
+
 type IndividualPointMatch = Pick<
   EliminatorMatch,
   | "team1_player1_id"
@@ -46,7 +57,8 @@ type IndividualPointMatch = Pick<
 >;
 
 function tierHandicap(tier?: string | null): number {
-  return ELIMINATOR_CATEGORY_HANDICAP[String(tier ?? "Dev")] ?? 0;
+  const normalizedTier = String(tier ?? "Dev").trim().toLowerCase();
+  return NORMALIZED_CATEGORY_HANDICAP[normalizedTier] ?? 0;
 }
 
 function pairHandicap(tierByPlayerId: ReadonlyMap<string, string | null | undefined>, playerIds: string[]) {
@@ -55,7 +67,8 @@ function pairHandicap(tierByPlayerId: ReadonlyMap<string, string | null | undefi
 
 /**
  * Apply the shared individual-player handicap calculation.
- * Both league and eliminator matches pass the player's official tier.
+ * Both league and eliminator matches pass the player's original official tier;
+ * tier labels are normalized because stored roster categories may be uppercase.
  */
 export function adjustedPlayerDiffs(
   match: IndividualPointMatch,

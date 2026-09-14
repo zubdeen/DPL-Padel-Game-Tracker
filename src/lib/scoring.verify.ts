@@ -186,6 +186,36 @@ assertEq(
   3,
 );
 
+const liveCaseTierPlayers: Player[] = [
+  { id: "live-m1", name: "Live M1", category: "M1" },
+  { id: "live-star", name: "Live Star", category: "STAR" },
+  { id: "live-core", name: "Live Core", category: "CORE" },
+  { id: "live-dev", name: "Live Dev", category: "DEV" },
+];
+const liveCaseStandings = computePlayerStandings(liveCaseTierPlayers, [{
+  id: "live-tier-match",
+  team1_player1_id: "live-m1",
+  team1_player2_id: "live-star",
+  team2_player1_id: "live-core",
+  team2_player2_id: "live-dev",
+  team1_games: 5,
+  team2_games: 3,
+  tie_breaker: false,
+  played_at: "2025-02-16T00:00:00Z",
+}]);
+// Live roster values are uppercase. They must still map to M1=4, Star=2,
+// Core=1, Dev=0, producing a pair handicap adjustment of -3 for team 1.
+assertEq(
+  "Uppercase live tiers use original handicaps",
+  liveCaseStandings.find((s) => s.player.id === "live-m1")!.points,
+  -3,
+);
+assertEq(
+  "Uppercase live tiers use opposing original handicaps",
+  liveCaseStandings.find((s) => s.player.id === "live-core")!.points,
+  3,
+);
+
 const substitutionMatches: Match[] = [
   {
     id: "s1",
