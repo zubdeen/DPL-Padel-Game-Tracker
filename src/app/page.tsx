@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,11 +31,15 @@ export default function Index() {
   const { isAdmin } = useAuth();
   const { data: configuredContent } = useSiteContent();
   const siteContent = configuredContent ?? defaultSiteContent;
-  const [activeTab, setActiveTab] = useState<TabId>(() => {
-    if (typeof window === "undefined") return "standings";
-    const requestedTab = new URLSearchParams(window.location.search).get("tab");
-    return requestedTab === "players" ? "players" : "standings";
-  });
+  const [activeTab, setActiveTab] = useState<TabId>("standings");
+  const [playerTier, setPlayerTier] = useState("all");
+  const [playerSearch, setPlayerSearch] = useState("");
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("tab") === "players") setActiveTab("players");
+    setPlayerTier(query.get("tier") ?? "all");
+    setPlayerSearch(query.get("search") ?? "");
+  }, []);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const scrollPositions = useRef<Record<TabId, number>>({
     standings: 0,
@@ -107,7 +111,7 @@ export default function Index() {
   const renderContent = (): ReactNode => {
     switch (activeTab) {
       case "players":
-        return <PlayersSection players={ps} matches={ms} eliminatorMatches={ems} />;
+        return <PlayersSection players={ps} matches={ms} eliminatorMatches={ems} initialCategory={playerTier} initialSearch={playerSearch} onSelectionChange={(tier, search) => { setPlayerTier(tier); setPlayerSearch(search); }} />;
       case "teams":
         return <TeamsSection players={ps} />;
       case "fixtures":

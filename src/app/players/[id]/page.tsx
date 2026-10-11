@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BarChart3, CalendarDays, Crown, ShieldCheck, Star, TrendingUp, Users } from "lucide-react";
@@ -64,7 +64,9 @@ function getLongestWinningStreak(playerId: string, matches: Match[]) {
 
 export default function PlayerDetailsPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const playerId = params?.id ?? "";
+  const returnToPlayers = getPlayersReturnUrl(searchParams.get("return"));
   const { data: content } = useSiteContent();
   const players = useQuery<Player[]>({ queryKey: ["players"], queryFn: fetchPlayers, staleTime: 5 * 60 * 1000 });
   const matches = useQuery<Match[]>({ queryKey: ["matches"], queryFn: fetchMatches, staleTime: 5 * 60 * 1000 });
@@ -83,8 +85,8 @@ export default function PlayerDetailsPage() {
   const teamLogo = player?.team ? getTeamLogo(site, player.team) : "";
   const isLoading = players.isLoading || matches.isLoading || eliminatorMatches.isLoading;
 
-  if (isLoading) return <PageShell><p className="py-10 text-center text-[11px] text-muted-foreground">Loading player profile…</p></PageShell>;
-  if (!player || !overallStanding) return <PageShell><SectionCard title="Player Not Found" icon={<Users className="h-4 w-4 text-primary" />}><p className="text-[11px] leading-relaxed text-muted-foreground">This player is not available in the current roster.</p><Link href="/?tab=players" className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-primary px-3 py-2 text-[11px] font-semibold text-primary-foreground">Back to players</Link></SectionCard></PageShell>;
+  if (isLoading) return <PageShell returnTo={returnToPlayers}><p className="py-10 text-center text-[11px] text-muted-foreground">Loading player profile…</p></PageShell>;
+  if (!player || !overallStanding) return <PageShell returnTo={returnToPlayers}><SectionCard title="Player Not Found" icon={<Users className="h-4 w-4 text-primary" />}><p className="text-[11px] leading-relaxed text-muted-foreground">This player is not available in the current roster.</p><Link href={returnToPlayers} className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-primary px-3 py-2 text-[11px] font-semibold text-primary-foreground">Back to players</Link></SectionCard></PageShell>;
 
   const winRate = overallStanding.matches ? (overallStanding.wins / overallStanding.matches) * 100 : 0;
   const gameDifference = overallStanding.gamesFor - overallStanding.gamesAgainst;
@@ -102,7 +104,7 @@ export default function PlayerDetailsPage() {
     ["League record", leagueStanding ? `${leagueStanding.wins}–${leagueStanding.losses}` : "0–0"],
   ];
 
-  return <PageShell>
+  return <PageShell returnTo={returnToPlayers}>
     <SectionCard title="Player Details" icon={<ShieldCheck className="h-4 w-4 text-primary" />}>
         <div className="space-y-4">
           <div className="flex flex-col items-center rounded-2xl bg-gradient-to-b from-primary/10 via-primary/[0.04] to-transparent p-4 text-center ring-1 ring-primary/15">
@@ -135,6 +137,19 @@ function MatchHistoryRow({ match, player }: { match: Match; player: Player }) {
   return <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] p-2.5 ring-1 ring-white/[0.06]"><div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[9px] font-bold ${won ? "bg-emerald-400/15 text-emerald-300" : "bg-red-400/15 text-red-300"}`}>{won ? "W" : "L"}</div><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-medium text-foreground">{team} vs {opponent}</p><p className="mt-0.5 text-[9px] text-muted-foreground">{new Date(match.played_at).toLocaleDateString()} {match.tie_breaker ? "· Tiebreak" : ""}</p></div><span className="font-mono text-[12px] font-bold text-primary">{score}</span></div>;
 }
 
-function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-background flex justify-center"><main className="w-full max-w-[420px] relative"><div className="px-5 pb-10 pt-8"><Link href="/?tab=players" className="mb-4 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary"><ArrowLeft className="h-3 w-3" /> Back to players</Link>{children}<GlobalFooter /></div></main></div>;
+function getPlayersReturnUrl(value: string | null) {
+  if (!value) return "/?tab=players";
+  try {
+    const url = new URL(value, "https://dpl.invalid");
+    if (url.origin !== "https://dpl.invalid" || url.pathname !== "/") return "/?tab=players";
+    const tab = url.searchParams.get("tab");
+    if (tab !== "players") return "/?tab=players";
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return "/?tab=players";
+  }
+}
+
+function PageShell({ children, returnTo }: { children: React.ReactNode; returnTo: string }) {
+  return <div className="min-h-screen bg-background flex justify-center"><main className="w-full max-w-[420px] relative"><div className="px-5 pb-10 pt-8"><Link href={returnTo} className="mb-4 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary"><ArrowLeft className="h-3 w-3" /> Back to players</Link>{children}<GlobalFooter /></div></main></div>;
 }

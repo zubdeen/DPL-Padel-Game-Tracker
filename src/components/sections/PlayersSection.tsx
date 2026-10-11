@@ -17,6 +17,9 @@ interface Props {
   players: import("@/lib/scoring").Player[];
   matches: Match[];
   eliminatorMatches?: EliminatorMatch[];
+  initialCategory?: string;
+  initialSearch?: string;
+  onSelectionChange?: (category: string, search: string) => void;
 }
 
 const CATEGORY_ORDER = ["M1", "M2", "Star", "Core", "Dev"];
@@ -37,6 +40,9 @@ export const PlayersSection = memo(function PlayersSectionComponent({
   players,
   matches,
   eliminatorMatches = [],
+  initialCategory = "all",
+  initialSearch = "",
+  onSelectionChange,
 }: Props) {
   const { data: configuredContent } = useSiteContent();
   const content = configuredContent ?? defaultSiteContent;
@@ -49,8 +55,8 @@ export const PlayersSection = memo(function PlayersSectionComponent({
     () => computePlayerStandings(players, matches),
     [players, matches],
   );
-  const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("all");
+  const [search, setSearch] = useState(initialSearch);
+  const [activeCategory, setActiveCategory] = useState(initialCategory);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -64,12 +70,15 @@ export const PlayersSection = memo(function PlayersSectionComponent({
   const selectedLeagueStanding = leagueStandings.find((standing) => standing.player.id === selectedPlayerId) ?? null;
 
   return <div className="space-y-4">
-    <div className="relative"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search players or teams..." className="h-10 w-full rounded-xl border-0 bg-zinc-900/50 pl-9 pr-3 text-sm text-foreground ring-1 ring-white/[0.06] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" /></div>
-    <div className="flex gap-1 overflow-x-auto rounded-xl bg-zinc-900/50 p-1 ring-1 ring-white/[0.04] scrollbar-hide">{CATEGORIES.map((category) => <button key={category.id} type="button" onClick={() => setActiveCategory(category.id)} className={`min-w-[52px] flex-1 rounded-lg px-2 py-2 text-[9px] font-semibold uppercase tracking-wide transition-all ${activeCategory === category.id ? "bg-primary text-primary-foreground shadow-sm shadow-primary/30" : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"}`}>{category.label}</button>)}</div>
+    <div className="relative"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => { setSearch(event.target.value); onSelectionChange?.(activeCategory, event.target.value); }} placeholder="Search players or teams..." className="h-10 w-full rounded-xl border-0 bg-zinc-900/50 pl-9 pr-3 text-sm text-foreground ring-1 ring-white/[0.06] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" /></div>
+    <div className="flex gap-1 overflow-x-auto rounded-xl bg-zinc-900/50 p-1 ring-1 ring-white/[0.04] scrollbar-hide">{CATEGORIES.map((category) => <button key={category.id} type="button" onClick={() => { setActiveCategory(category.id); onSelectionChange?.(category.id, search); }} className={`min-w-[52px] flex-1 rounded-lg px-2 py-2 text-[9px] font-semibold uppercase tracking-wide transition-all ${activeCategory === category.id ? "bg-primary text-primary-foreground shadow-sm shadow-primary/30" : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"}`}>{category.label}</button>)}</div>
     <SectionCard title="Player Rankings" icon={<Users className="h-3.5 w-3.5 text-primary/70" />}>
       <div className="space-y-3">
         {filteredStandings.length === 0 ? <p className="px-2 py-6 text-center text-[11px] text-muted-foreground">No players found.</p> : null}
-        {sortedGroups.map(([category, categoryStandings]) => <div key={category}><div className={`space-y-1.5 rounded-lg bg-gradient-to-r p-3 ring-1 ${CATEGORY_COLORS[category] ?? CATEGORY_COLORS.Dev}`}><div className="mb-2 flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider text-foreground">{category}</h3><span className="text-[9px] text-muted-foreground">{categoryStandings.length} players</span></div>{categoryStandings.map((standing, index) => <RankingRow key={standing.player.id} standing={standing} index={index} content={content} onClick={() => router.push(`/players/${standing.player.id}`)} />)}</div></div>)}
+        {sortedGroups.map(([category, categoryStandings]) => <div key={category}><div className={`space-y-1.5 rounded-lg bg-gradient-to-r p-3 ring-1 ${CATEGORY_COLORS[category] ?? CATEGORY_COLORS.Dev}`}><div className="mb-2 flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider text-foreground">{category}</h3><span className="text-[9px] text-muted-foreground">{categoryStandings.length} players</span></div>{categoryStandings.map((standing, index) => <RankingRow key={standing.player.id} standing={standing} index={index} content={content} onClick={() => {
+          const returnToPlayers = new URLSearchParams({ tab: "players", tier: activeCategory, search });
+          router.push(`/players/${standing.player.id}?return=${encodeURIComponent(`/?${returnToPlayers}`)}`);
+        }} />)}</div></div>)}
         <p className="pt-1 text-center text-[9px] text-muted-foreground/60">Select a player for their full ranking profile. Rating = average game difference per game.</p>
       </div>
     </SectionCard>
