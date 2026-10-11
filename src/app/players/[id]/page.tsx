@@ -122,7 +122,7 @@ export default function PlayerDetailsPage() {
       <div className="space-y-2">{playerMatches.length ? playerMatches.map((match) => <MatchHistoryRow key={match.id} match={match} player={player} />) : <p className="py-6 text-center text-[11px] text-muted-foreground">No recorded league games yet.</p>}</div>
     </SectionCard>
 
-    <div className="flex items-center justify-center gap-1.5 text-[9px] text-muted-foreground"><Star className="h-3 w-3 text-primary" /> Select the player from the rankings page any time to return here.</div>
+    <div className="flex items-center justify-center gap-1.5 text-[9px] text-muted-foreground"><Star className="h-3 w-3 text-primary" /> Player statistics</div>
   </PageShell>;
 }
 
@@ -136,5 +136,5 @@ function MatchHistoryRow({ match, player }: { match: Match; player: Player }) {
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-background flex justify-center"><main className="w-full max-w-[420px] relative"><div className="px-5 pb-10 pt-8"><Link href="/" className="mb-4 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary"><ArrowLeft className="h-3 w-3" /> Back to players</Link>{children}<GlobalFooter /></div></main></div>;
+  return <div className="min-h-screen bg-background flex justify-center"><main className="w-full max-w-[420px] relative"><div className="px-5 pb-10 pt-8"><Link href="/?tab=players" className="mb-4 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-primary"><ArrowLeft className="h-3 w-3" /> Back to players</Link>{children}<GlobalFooter /></div></main></div>;
 }

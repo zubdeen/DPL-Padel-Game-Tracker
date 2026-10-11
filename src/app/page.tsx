@@ -31,7 +31,11 @@ export default function Index() {
   const { isAdmin } = useAuth();
   const { data: configuredContent } = useSiteContent();
   const siteContent = configuredContent ?? defaultSiteContent;
-  const [activeTab, setActiveTab] = useState<TabId>("standings");
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (typeof window === "undefined") return "standings";
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    return requestedTab === "players" ? "players" : "standings";
+  });
   const [isTransitioning, setIsTransitioning] = useState(false);
   const scrollPositions = useRef<Record<TabId, number>>({
     standings: 0,
